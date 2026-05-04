@@ -1,0 +1,19 @@
+﻿{"frames": {
+
+"bartest":
+{
+	"frame": {"x":0,"y":0,"w":797,"h":273},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":797,"h":273},
+	"sourceSize": {"w":797,"h":273}
+}},
+"meta": {
+	"app": "Adobe Animate",
+	"version": "24.0.12.2",
+	"image": "animate_atlas_2.png",
+	"format": "undefined",
+	"size": {"w":1024,"h":512},
+	"scale": "1"
+}
+}
