@@ -1,76 +1,126 @@
 <!DOCTYPE html>
-<!--
-	NOTES:
-	1. All tokens are represented by '$' sign in the template.
-	2. You can write your code only wherever mentioned.
-	3. All occurrences of existing tokens will be replaced by their appropriate values.
-	4. Blank lines will be removed automatically.
-	5. Remove unnecessary comments before creating your template.
--->
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="authoring-tool" content="Adobe_Animate_CC">
-<title>index</title>
-<!-- write your code here -->
-<style>
-  #animation_container {
-	position:absolute;
-	margin:auto;
-	left:0;right:0;
-	top:0;bottom:0;
-  }
-</style>
-<script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
-<script src="index.js"></script>
-<script>
-var canvas, stage, exportRoot, anim_container, dom_overlay_container, fnStartAnimation;
-function init() {
-	canvas = document.getElementById("canvas");
-	anim_container = document.getElementById("animation_container");
-	dom_overlay_container = document.getElementById("dom_overlay_container");
-	var comp=AdobeAn.getComposition("8921704EE35344D5B30237EACC7B31AA");
-	var lib=comp.getLibrary();
-	var loader = new createjs.LoadQueue(false);
-	loader.addEventListener("fileload", function(evt){handleFileLoad(evt,comp)});
-	loader.addEventListener("complete", function(evt){handleComplete(evt,comp)});
-	var lib=comp.getLibrary();
-	loader.loadManifest(lib.properties.manifest);
-}
-function handleFileLoad(evt, comp) {
-	var images=comp.getImages();	
-	if (evt && (evt.item.type == "image")) { images[evt.item.id] = evt.result; }	
-}
-function handleComplete(evt,comp) {
-	//This function is always called, irrespective of the content. You can use the variable "stage" after it is created in token create_stage.
-	var lib=comp.getLibrary();
-	var ss=comp.getSpriteSheet();
-	var queue = evt.target;
-	var ssMetadata = lib.ssMetadata;
-	for(i=0; i<ssMetadata.length; i++) {
-		ss[ssMetadata[i].name] = new createjs.SpriteSheet( {"images": [queue.getResult(ssMetadata[i].name)], "frames": ssMetadata[i].frames} )
-	}
-	exportRoot = new lib.OhHenry();
-	stage = new lib.Stage(canvas);	
-	//Registers the "tick" event listener.
-	fnStartAnimation = function() {
-		stage.addChild(exportRoot);
-		createjs.Ticker.framerate = lib.properties.fps;
-		createjs.Ticker.addEventListener("tick", stage);
-	}	    
-	//Code to support hidpi screens and responsive scaling.
-	AdobeAn.makeResponsive(true,'both',true,1,[canvas,anim_container,dom_overlay_container]);	
-	AdobeAn.compositionLoaded(lib.properties.id);
-	fnStartAnimation();
-}
-</script>
-<!-- write your code here -->
+    <meta charset="UTF-8">
+    <title>Oh Henry XM</title>
+    <style>
+        body { margin: 0; background-color: #000; font-family: sans-serif; overflow: hidden; }
+        #animation_container {
+            position: absolute; margin: auto; left: 0; right: 0; top: 0; bottom: 0;
+            opacity: 0; transition: opacity 0.5s ease-in-out;
+        }
+        
+        /* BA SETUP SCREEN STYLES */
+        #ba-setup-screen {
+            position: absolute; top: 0; left: 0; width: 1920px; height: 1080px;
+            background: #111; color: #fff; z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .setup-panel { background: #222; padding: 40px; border-radius: 15px; width: 800px; text-align: center; border: 2px solid #444; }
+        .slider-group { margin: 30px 0; text-align: left; }
+        .slider-group label { display: flex; justify-content: space-between; font-size: 20px; margin-bottom: 10px; color: #ccc;}
+        input[type=range] { width: 100%; height: 15px; background: #444; outline: none; border-radius: 10px; cursor: pointer; }
+        .setup-btn { font-size: 24px; padding: 20px 40px; background: #00ffcc; color: #000; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 20px;}
+        .setup-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+        
+        /* MINI TEST METER */
+        #ba-test-meter-bg { width: 100%; height: 40px; background: #000; border-radius: 20px; margin-top: 30px; overflow: hidden; border: 2px solid #555;}
+        #ba-test-meter-fill { width: 0%; height: 100%; background: linear-gradient(to right, #00ffcc, #ffff00, #ff3333); transition: width 0.1s linear;}
+        
+        /* TEMPORARY GAME BUTTONS */
+        .temp-btn { display: none; position: absolute; right: 50px; bottom: 50px; z-index: 100; font-size: 24px; padding: 15px 30px; background: #ff3333; color: #fff; border: 2px solid #fff; border-radius: 10px; cursor: pointer; font-weight: bold; }
+    </style>
+    <script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
+    <script src="index.js"></script>
+    <script>
+        var canvas, stage, exportRoot, anim_container, dom_overlay_container, fnStartAnimation;
+        function init() {
+            canvas = document.getElementById("canvas");
+            anim_container = document.getElementById("animation_container");
+            dom_overlay_container = document.getElementById("dom_overlay_container");
+            var comp = AdobeAn.getComposition("8921704EE35344D5B30237EACC7B31AA");
+            var lib = comp.getLibrary();
+            var loader = new createjs.LoadQueue(false);
+            loader.addEventListener("fileload", function(evt){handleFileLoad(evt,comp)});
+            loader.addEventListener("complete", function(evt){handleComplete(evt,comp)});
+            loader.loadManifest(lib.properties.manifest);
+        }
+        function handleFileLoad(evt, comp) {
+            var images = comp.getImages();    
+            if (evt && (evt.item.type == "image")) { images[evt.item.id] = evt.result; }    
+        }
+        function handleComplete(evt, comp) {
+            var lib = comp.getLibrary();
+            var ss = comp.getSpriteSheet();
+            var queue = evt.target;
+            var ssMetadata = lib.ssMetadata;
+            for(i=0; i<ssMetadata.length; i++) {
+                ss[ssMetadata[i].name] = new createjs.SpriteSheet( {"images": [queue.getResult(ssMetadata[i].name)], "frames": ssMetadata[i].frames} )
+            }
+            exportRoot = new lib.OhHenry();
+            window.mcRoot = exportRoot; 
+            stage = new lib.Stage(canvas);  
+            fnStartAnimation = function() {
+                stage.addChild(exportRoot);
+                createjs.Ticker.framerate = lib.properties.fps;
+                createjs.Ticker.addEventListener("tick", stage);
+            }       
+            AdobeAn.makeResponsive(true,'both',true,1,[canvas,anim_container,dom_overlay_container]);   
+            AdobeAn.compositionLoaded(lib.properties.id);
+            fnStartAnimation();
+        }
+    </script>
 </head>
-<body onload="init();" style="margin:0px;">
-	<div id="animation_container" style="background-color:rgba(255, 255, 255, 1.00); width:1920px; height:1080px">
-		<canvas id="canvas" width="1920" height="1080" style="position: absolute; display: block; background-color:rgba(255, 255, 255, 1.00);"></canvas>
-		<div id="dom_overlay_container" style="pointer-events:none; overflow:hidden; width:1920px; height:1080px; position: absolute; left: 0px; top: 0px; display: block;">
-		</div>
-	</div>
+<body onload="init();">
+    
+    <div id="ba-setup-screen">
+        <div class="setup-panel">
+            <h1 style="color: #00ffcc; margin-top: 0;">KIOSK INITIALIZATION</h1>
+            <p style="color: #aaa; margin-bottom: 30px;">Initialize the microphone and tune the audio parameters for the station's ambient noise.</p>
+            
+            <button id="btn-init-mic" class="setup-btn" onclick="window.handleMicInit()">1. Connect Microphone</button>
+            
+            <div id="tuning-controls" style="display: none; margin-top: 40px;">
+                <div class="slider-group">
+                    <label><span>Growl Sensitivity (Multiplier)</span> <span id="val-sens" style="color:#fff; font-weight:bold;">1.8x</span></label>
+                    <input type="range" id="slide-sens" min="0.5" max="4.0" step="0.1" value="1.8" oninput="window.updateTuning()">
+                </div>
+                
+                <div class="slider-group">
+                    <label><span>Background Rumble Gate (Ignores Trains)</span> <span id="val-gate" style="color:#fff; font-weight:bold;">15%</span></label>
+                    <input type="range" id="slide-gate" min="0" max="50" step="1" value="15" oninput="window.updateTuning()">
+                </div>
+                
+                <div class="slider-group">
+                    <label><span>Whistle/Screech Penalty (0 = Off)</span> <span id="val-pen" style="color:#fff; font-weight:bold;">1.0x</span></label>
+                    <input type="range" id="slide-pen" min="0" max="3.0" step="0.1" value="1.0" oninput="window.updateTuning()">
+                </div>
+
+                <div id="ba-test-meter-bg">
+                    <div id="ba-test-meter-fill"></div>
+                </div>
+                <div style="font-size: 14px; color: #888; margin-top: 10px;">Test growling into the mic before launching!</div>
+
+                <button class="setup-btn" style="background:#ff3333; color:#fff; width: 100%; margin-top: 40px;" onclick="window.launchKiosk()">2. Launch Experience</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="animation_container" style="width:1920px; height:1080px; display: none;">
+        <canvas id="canvas" width="1920" height="1080" style="position: absolute; display: block;"></canvas>
+        <div id="dom_overlay_container" style="pointer-events:none; overflow:hidden; width:1920px; height:1080px; position: absolute; left: 0px; top: 0px; display: block;"></div>
+    </div>
+
+    <div id="vu-meter-container" style="position: absolute; left: 100px; top: 340px; width: 60px; height: 400px; background: rgba(0,0,0,0.5); border: 4px solid #fff; border-radius: 30px; overflow: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100;">
+        <div id="vu-meter-fill" style="position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; background: linear-gradient(to top, #00ffcc, #ffff00, #ff3333); transition: height 0.05s linear;"></div>
+    </div>
+
+    <button id="btn-game-continue" class="temp-btn" onclick="window.onGameContinue()">Continue to Success</button>
+    <button id="btn-success-continue" class="temp-btn" onclick="window.transitionTo('clip_thanks')">Continue to Thanks</button>
+    <button id="btn-thanks-continue" class="temp-btn" onclick="window.transitionTo('clip_idle')">Finish & Reset</button>
+
+    <script src="js/audioProcessor.js"></script>
+    <script src="js/vuMeter.js"></script>
+    <script src="js/gameController.js"></script>
 </body>
 </html>
