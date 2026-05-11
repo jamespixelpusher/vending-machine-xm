@@ -1,18 +1,16 @@
-console.log("Game Controller initialized.");
-
 let currentClipName = null;
 let targetClipName = null;
 let baTestInterval = null;
+let isDevMode = false;
+
+let gameDurationTimeout = null;
+let gameVolumePollInterval = null;
 
 window.onAnimateReady = () => {
-    console.log("Animate timeline ready! Waiting for BA Setup...");
     if (createjs.Touch.isSupported()) createjs.Touch.enable(stage);
-    setupKeyboardOverrides(); // Initialize keyboard listeners
+    setupKeyboardOverrides(); 
 };
 
-// ==========================================
-// BA SETUP SCREEN LOGIC
-// ==========================================
 window.handleMicInit = async () => {
     const success = await window.initAudio();
     if (success) {
@@ -20,26 +18,56 @@ window.handleMicInit = async () => {
         document.getElementById("tuning-controls").style.display = "block";
         baTestInterval = setInterval(() => {
             if (window.getGrumbleVolume) {
-                const vol = window.getGrumbleVolume();
-                document.getElementById("ba-test-meter-fill").style.width = vol + "%";
+                document.getElementById("ba-test-meter-fill").style.width = window.getGrumbleVolume() + "%";
             }
         }, 50);
     }
 };
 
+window.runCalibration = () => {
+    const btn = document.getElementById("btn-calibrate");
+    const display = document.getElementById("val-floor");
+    
+    btn.disabled = true;
+    btn.innerText = "Listening...";
+    
+    let samples = [];
+    let calInterval = setInterval(() => {
+        if (window.getRawVolume) samples.push(window.getRawVolume());
+    }, 50);
+
+    setTimeout(() => {
+        clearInterval(calInterval);
+        let sum = samples.reduce((a, b) => a + b, 0);
+        let avg = sum / samples.length;
+        
+        let floor = Math.min(80, Math.round(avg + 3));
+        
+        if (window.audioTuning) window.audioTuning.noiseFloor = floor;
+        display.innerText = "Baseline Floor: " + floor + "%";
+        
+        btn.innerText = "Recalibrate";
+        btn.disabled = false;
+    }, 3000);
+};
+
 window.updateTuning = () => {
-    const sens = parseFloat(document.getElementById("slide-sens").value);
-    const gate = parseInt(document.getElementById("slide-gate").value);
-    const pen = parseFloat(document.getElementById("slide-pen").value);
+    isDevMode = document.getElementById("check-devmode").checked;
     
-    document.getElementById("val-sens").innerText = sens.toFixed(1) + "x";
-    document.getElementById("val-gate").innerText = gate + "%";
-    document.getElementById("val-pen").innerText = pen.toFixed(1) + "x";
+    const target = parseInt(document.getElementById("slide-target").value);
+    const boost = parseFloat(document.getElementById("slide-boost").value);
+    const deepOnly = document.getElementById("check-deep").checked;
     
+    document.getElementById("val-target").innerText = target + "%";
+    document.getElementById("val-boost").innerText = boost.toFixed(1) + "x";
+    
+    document.getElementById("win-line-indicator").style.left = target + "%";
+    document.getElementById("win-label").style.left = target + "%";
+
     if (window.audioTuning) {
-        window.audioTuning.sensitivity = sens;
-        window.audioTuning.noiseGate = gate;
-        window.audioTuning.penaltyWeight = pen;
+        window.audioTuning.targetVolume = target;
+        window.audioTuning.micBoost = boost;
+        window.audioTuning.deepGrowlOnly = deepOnly;
     }
 };
 
@@ -54,9 +82,6 @@ window.launchKiosk = () => {
     }, 50);
 };
 
-// ==========================================
-// CORE GAME LOGIC
-// ==========================================
 function initGame() {
     hideAllClips();
     transitionTo("clip_idle");
@@ -64,7 +89,7 @@ function initGame() {
 
 function hideAllClips() {
     if (!window.mcRoot || !window.mcRoot.clip_content) return;
-    const clips = ["clip_idle", "clip_countdown", "clip_game", "clip_success", "clip_thanks"];
+    const clips = ["clip_idle", "clip_countdown", "clip_game", "clip_success"];
     clips.forEach(name => {
         if (window.mcRoot.clip_content[name]) window.mcRoot.clip_content[name].visible = false;
     });
@@ -73,7 +98,6 @@ function hideAllClips() {
 function hideTempButtons() {
     document.getElementById("btn-game-continue").style.display = "none";
     document.getElementById("btn-success-continue").style.display = "none";
-    document.getElementById("btn-thanks-continue").style.display = "none";
 }
 
 function transitionTo(newClipName) {
@@ -116,57 +140,60 @@ window.onIntroComplete = () => {
                 beginBtn.on("click", () => { transitionTo("clip_countdown"); });
             }
             break;
+
         case "clip_countdown":
             if (activeClip.countdown_anim) activeClip.countdown_anim.gotoAndPlay("countdown_start");
+            
+            let cdTime = isDevMode ? 1000 : 3000;
+            setTimeout(() => { transitionTo("clip_game"); }, cdTime);
             break;
+
         case "clip_game":
             if (window.startVUMeter) window.startVUMeter();
             document.getElementById("btn-game-continue").style.display = "block";
+            
+            gameVolumePollInterval = setInterval(() => {
+                let currentVol = window.getGrumbleVolume ? window.getGrumbleVolume() : 0;
+                let target = window.audioTuning ? window.audioTuning.targetVolume : 80;
+                
+                if (currentVol >= target) {
+                    triggerWin();
+                }
+            }, 100); 
+
+            gameDurationTimeout = setTimeout(() => {
+                triggerWin();
+            }, 5000);
             break;
+
         case "clip_success":
             document.getElementById("btn-success-continue").style.display = "block";
-            break;
-        case "clip_thanks":
-            document.getElementById("btn-thanks-continue").style.display = "block";
+            setTimeout(() => { transitionTo("clip_idle"); }, 5000);
             break;
     }
 };
 
-window.onCountdownComplete = () => { transitionTo("clip_game"); };
+window.forceGameWin = () => { triggerWin(); };
 
-window.onGameContinue = () => {
+function triggerWin() {
+    clearInterval(gameVolumePollInterval);
+    clearTimeout(gameDurationTimeout);
+    
     if (window.stopVUMeter) window.stopVUMeter();
     
-    let finalScore = window.getPeakScore ? window.getPeakScore() : 0;
-    console.log(`Round ended. Final Peak Score: ${finalScore}`);
+    if (window.electronAPI && window.electronAPI.vendItem) window.electronAPI.vendItem(1);
     
-    if (window.resetPeakScore) window.resetPeakScore();
-    
-    let tier = 1; // Default Small
-    if (finalScore >= 85) { tier = 3; } // Large
-    else if (finalScore >= 50) { tier = 2; } // Medium
-    
-    triggerWin(tier);
-};
-
-function triggerWin(tier) {
-    if (window.electronAPI && window.electronAPI.vendItem) window.electronAPI.vendItem(tier);
     transitionTo("clip_success");
 }
 
-// ==========================================
-// KEYBOARD SIMULATION & OVERRIDES
-// ==========================================
 function setupKeyboardOverrides() {
     window.addEventListener('keydown', (e) => {
-        // Only allow score simulation during the game or BA setup screen
-        if (e.key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } // Small Grumble
-        if (e.key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } // Medium Grumble
-        if (e.key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(98); } // Max Grumble
+        if (e.key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } 
+        if (e.key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } 
+        if (e.key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(100); } 
     });
 
     window.addEventListener('keyup', (e) => {
-        // When the key is released, turn off the simulation so the meter drops
         if (['1', '2', '3'].includes(e.key)) {
             if (window.setSimulatedScore) window.setSimulatedScore(null); 
         }
