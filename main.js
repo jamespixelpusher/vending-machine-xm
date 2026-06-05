@@ -1,48 +1,76 @@
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
+const { SerialPort } = require('serialport');
 
 let mainWindow;
+let arduinoPort = null;
 
+// ==========================================
+// ARDUINO SERIAL AUTO-DETECTION (CROSS-PLATFORM)
+// ==========================================
+async function connectToArduino() {
+    try {
+        const ports = await SerialPort.list();
+        
+        // Look for Mac signatures OR Windows COM ports that have a USB Vendor ID
+        const targetPort = ports.find(p => 
+            p.path.includes('usbmodem') || 
+            p.path.includes('usbserial') || 
+            (p.path.startsWith('COM') && p.vendorId) 
+        );
+
+        if (targetPort) {
+            console.log(`[SERIAL SUCCESS] Found Arduino on port: ${targetPort.path}`);
+            
+            arduinoPort = new SerialPort({
+                path: targetPort.path, 
+                baudRate: 9600,
+                autoOpen: true
+            });
+
+            arduinoPort.on('error', function(err) {
+                console.log('[SERIAL ERROR] Connection dropped: ', err.message);
+            });
+
+        } else {
+            console.log('[SERIAL WARNING] No Arduino detected. Is it plugged in?');
+        }
+    } catch (err) {
+        console.error('[SERIAL FATAL] Could not list ports: ', err);
+    }
+}
+
+// ==========================================
+// ELECTRON APP SETUP
+// ==========================================
 function createWindow() {
-    // 1. Create the browser window
     mainWindow = new BrowserWindow({
         width: 1920,
         height: 1080,
-        kiosk: true, // Forces true fullscreen (no menu bar, no dock)
+        kiosk: true, 
         autoHideMenuBar: true,
-        backgroundColor: '#FFFFFF', // Prevents white flash on load if your app is dark
+        backgroundColor: '#000000', 
         webPreferences: {
-            nodeIntegration: true, // Allows us to use Node.js features in our front-end
-            contextIsolation: false, // Simplifies the IPC bridge for local kiosk apps
-            webSecurity: false // Prevents CORS issues with local audio/image files
+            nodeIntegration: true, 
+            contextIsolation: false, 
+            webSecurity: false 
         }
     });
 
-    // 2. Load your Adobe Animate HTML file
+    // Load the HTML file from the src folder
     mainWindow.loadFile(path.join(__dirname, 'src/index.html'));
-
-    // 3. Optional: Open the DevTools automatically for debugging
-    // mainWindow.webContents.openDevTools();
+    
+    // Open DevTools for debugging (add '//' to the start of this line to hide it for production)
+    mainWindow.webContents.openDevTools();
 }
 
-// 4. Auto-allow Microphone Access
-// Kiosks can't have popup prompts asking for permission, so we auto-approve it.
 app.whenReady().then(() => {
-    session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-        if (permission === 'media') {
-            return true; // Always allow microphone
-        }
-        return false;
-    });
+    // Auto-approve microphone permissions for the kiosk
+    session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === 'media');
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === 'media'));
 
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-        if (permission === 'media') {
-            callback(true); // Always allow microphone
-        } else {
-            callback(false);
-        }
-    });
-
+    // Trigger the hardware hunt when the app boots
+    connectToArduino();
     createWindow();
 
     app.on('activate', function () {
@@ -50,14 +78,22 @@ app.whenReady().then(() => {
     });
 });
 
-// 5. Quit when all windows are closed
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
 });
 
-// 6. The IPC Bridge (Placeholder for Hardware Integration)
-// This listens for the 'vend-item' message from your gameController.js
-ipcMain.on('vend-item', (event, tier) => {
-    console.log(`[HARDWARE TRIGGER] Time to vend tier ${tier} chocolate!`);
-    // Future hardware code (like Arduino serial commands) will go right here.
+// ==========================================
+// THE HARDWARE BRIDGE (IPC LISTENER)
+// ==========================================
+ipcMain.on('vend-item', (event, rowNumber) => {
+    console.log(`[HARDWARE TRIGGER] Requesting drop from Row ${rowNumber}...`);
+    
+    if (arduinoPort && arduinoPort.isOpen) {
+        arduinoPort.write(`${rowNumber}\n`, (err) => {
+            if (err) return console.log('[SERIAL ERROR] Failed to send to Arduino: ', err.message);
+            console.log(`[SERIAL SUCCESS] Sent command '${rowNumber}' to the machine.`);
+        });
+    } else {
+        console.log('[SERIAL ERROR] Cannot vend. Arduino is not connected.');
+    }
 });
