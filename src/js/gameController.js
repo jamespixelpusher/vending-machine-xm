@@ -3,8 +3,8 @@ let ipcRenderer = null;
 let fs = null;
 let path = null;
 let inventoryFilePath = null;
+let isHardwareConnected = true; // Track state to prevent log spam
 
-// Bulletproof node detection
 const getRequire = () => {
     if (typeof require !== 'undefined') return require;
     if (typeof window !== 'undefined' && window.require) return window.require;
@@ -18,14 +18,40 @@ if (nodeRequire) {
     fs = nodeRequire('fs');
     path = nodeRequire('path');
     
-    // Save the file right in your main project folder!
     if (typeof process !== 'undefined') {
         inventoryFilePath = path.join(process.cwd(), 'inventory.json');
     }
-    
-    console.log("[HARDWARE STATUS] Electron detected. Hardware & File System active.");
+
+    // --- SMART DIAGNOSTIC LISTENER ---
+    ipcRenderer.on('hardware-status', (event, data) => {
+        const debugPanel = document.getElementById('debug-panel');
+        const debugLog = document.getElementById('debug-log');
+        
+        if (!data.connected) {
+            // Only log the error once so we don't spam the screen every 3 seconds
+            if (isHardwareConnected || debugPanel.style.display !== 'block') {
+                debugPanel.style.display = 'block';
+                debugLog.innerHTML += `<div style="color: #FF3333;">[SCANNING] ${data.error}</div>`;
+            }
+            isHardwareConnected = false;
+        } else {
+            // When it reconnects, print success and auto-hide after 2.5 seconds
+            if (!isHardwareConnected) {
+                debugLog.innerHTML += `<div style="color: #00FF00;">[OK] ARDUINO CONNECTED (${data.port})</div>`;
+                isHardwareConnected = true;
+                
+                setTimeout(() => {
+                    if (isHardwareConnected) debugPanel.style.display = 'none';
+                }, 2500);
+            }
+        }
+        
+        // Auto-scroll log to bottom
+        debugLog.scrollTop = debugLog.scrollHeight;
+    });
+
 } else {
-    console.warn("[DEV MODE] Standard browser detected. Hardware & File saving disabled.");
+    console.warn("[DEV MODE] Standard browser detected.");
 }
 
 // --- GAME STATE ---
@@ -36,7 +62,7 @@ let isDevMode = false;
 let gameDurationTimeout = null;
 let gameVolumePollInterval = null;
 
-// --- INVENTORY MANAGEMENT (HARD DRIVE PERSISTENT) ---
+// --- INVENTORY MANAGEMENT ---
 const defaultInventory = [
     { motor: 1, stock: 10 }, { motor: 2, stock: 10 },
     { motor: 3, stock: 10 }, { motor: 4, stock: 10 },
@@ -46,33 +72,31 @@ const defaultInventory = [
 
 window.motorInventory = JSON.parse(JSON.stringify(defaultInventory));
 
-// 1. Boot up: Try to read the file from the hard drive
 if (fs && inventoryFilePath && fs.existsSync(inventoryFilePath)) {
     try {
         const rawData = fs.readFileSync(inventoryFilePath, 'utf8');
         window.motorInventory = JSON.parse(rawData);
-        console.log("[INVENTORY] Successfully loaded stock from inventory.json.");
-    } catch (err) {
-        console.error("[INVENTORY ERROR] Failed to read file, using defaults.", err);
-    }
+    } catch (err) {}
 } else if (!fs) {
-    // Fallback for normal web browsers
     const saved = localStorage.getItem('ohHenryInventory');
     if (saved) window.motorInventory = JSON.parse(saved);
 }
 
-// 2. Helper: Physically write the current state to the hard drive
+window.checkLowStock = () => {
+    const totalStock = window.motorInventory.reduce((sum, item) => sum + item.stock, 0);
+    const warningBadge = document.getElementById("low-stock-warning");
+    if (warningBadge) {
+        warningBadge.style.display = (totalStock <= 15) ? 'block' : 'none';
+    }
+};
+
 window.saveInventory = () => {
     if (fs && inventoryFilePath) {
-        try {
-            fs.writeFileSync(inventoryFilePath, JSON.stringify(window.motorInventory, null, 4));
-            console.log("[INVENTORY] Hard drive stock successfully updated.");
-        } catch (err) {
-            console.error("[INVENTORY ERROR] Could not save to hard drive.", err);
-        }
+        try { fs.writeFileSync(inventoryFilePath, JSON.stringify(window.motorInventory, null, 4)); } catch (err) {}
     } else {
         localStorage.setItem('ohHenryInventory', JSON.stringify(window.motorInventory));
     }
+    window.checkLowStock();
 };
 
 function renderInventoryUI() {
@@ -100,7 +124,7 @@ window.adjustStock = (index, amount) => {
     
     window.motorInventory[index].stock = newStock;
     document.getElementById(`stock-val-${index}`).innerText = newStock;
-    window.saveInventory(); // Write to file
+    window.saveInventory(); 
 };
 
 window.fillAllInventory = () => {
@@ -108,7 +132,7 @@ window.fillAllInventory = () => {
         item.stock = 10; 
         document.getElementById(`stock-val-${index}`).innerText = "10";
     });
-    window.saveInventory(); // Write to file
+    window.saveInventory(); 
 };
 
 window.showInventoryScreen = () => {
@@ -127,14 +151,11 @@ window.vendNextAvailableItem = () => {
 
     if (availableMotor) {
         availableMotor.stock -= 1;
-        window.saveInventory(); // Write to file immediately on drop!
+        window.saveInventory(); 
         
-        console.log(`Dispensing from Row ${availableMotor.motor}. (${availableMotor.stock} left on this coil)`);
-        
+        console.log(`Dispensing from Row ${availableMotor.motor}.`);
         if (ipcRenderer) {
             ipcRenderer.send('vend-item', availableMotor.motor);
-        } else {
-            console.log(`[SIMULATED VEND] Sent command '${availableMotor.motor}' to hardware.`);
         }
         return true; 
     } else {
@@ -147,6 +168,7 @@ window.vendNextAvailableItem = () => {
 window.onAnimateReady = () => {
     if (createjs.Touch.isSupported()) createjs.Touch.enable(stage);
     setupKeyboardOverrides(); 
+    window.checkLowStock();
 };
 
 window.handleMicInit = async () => {
@@ -165,7 +187,6 @@ window.handleMicInit = async () => {
 window.runCalibration = () => {
     const btn = document.getElementById("btn-calibrate");
     const display = document.getElementById("val-floor");
-    
     btn.disabled = true;
     btn.innerText = "Listening...";
     
@@ -177,9 +198,7 @@ window.runCalibration = () => {
     setTimeout(() => {
         clearInterval(calInterval);
         let sum = samples.reduce((a, b) => a + b, 0);
-        let avg = sum / samples.length;
-        
-        let floor = Math.min(80, Math.round(avg + 3));
+        let floor = Math.min(80, Math.round((sum / samples.length) + 3));
         
         if (window.audioTuning) window.audioTuning.noiseFloor = floor;
         display.innerText = "Baseline Floor: " + floor + "%";
@@ -231,11 +250,6 @@ function hideAllClips() {
     });
 }
 
-function hideTempButtons() {
-    document.getElementById("btn-game-continue").style.display = "none";
-    document.getElementById("btn-success-continue").style.display = "none";
-}
-
 function transitionTo(newClipName) {
     targetClipName = newClipName;
     if (currentClipName && window.mcRoot.clip_content[currentClipName]) {
@@ -247,7 +261,6 @@ function transitionTo(newClipName) {
 
 function bringInNextClip() {
     hideAllClips();
-    hideTempButtons(); 
     currentClipName = targetClipName;
     
     window.mcRoot.clip_content.gotoAndStop(currentClipName);
@@ -290,9 +303,7 @@ window.onIntroComplete = () => {
                 if (currentVol >= target) triggerWin();
             }, 100); 
 
-            gameDurationTimeout = setTimeout(() => {
-                triggerWin(); 
-            }, 5000);
+            gameDurationTimeout = setTimeout(() => { triggerWin(); }, 5000);
             break;
 
         case "clip_success":
@@ -301,11 +312,7 @@ window.onIntroComplete = () => {
     }
 };
 
-window.onCountdownComplete = () => {
-    transitionTo("clip_game");
-};
-
-window.forceGameWin = () => { triggerWin(); };
+window.onCountdownComplete = () => { transitionTo("clip_game"); };
 
 function triggerWin() {
     clearInterval(gameVolumePollInterval);
@@ -316,12 +323,59 @@ function triggerWin() {
     transitionTo("clip_success");
 }
 
+window.runDiagnostic = () => {
+    const debugPanel = document.getElementById('debug-panel');
+    const debugLog = document.getElementById('debug-log');
+    debugPanel.style.display = 'block';
+    
+    debugLog.innerHTML = `<div style="color: #FFD200; border-bottom: 1px solid #FFD200; margin-bottom: 10px;">Running System Scan...</div>`;
+
+    if (fs && inventoryFilePath) {
+        debugLog.innerHTML += `<div style="color: #00FF00;">[OK] Native File System Active</div>`;
+        if (fs.existsSync(inventoryFilePath)) {
+            debugLog.innerHTML += `<div style="color: #00FF00;">[OK] inventory.json Verified</div>`;
+        } else {
+            debugLog.innerHTML += `<div style="color: #FF3333;">[FAIL] inventory.json Missing</div>`;
+        }
+    } else {
+        debugLog.innerHTML += `<div style="color: #FF3333;">[FAIL] File System Disabled</div>`;
+    }
+
+    if (ipcRenderer) {
+        debugLog.innerHTML += `<div style="color: #00FF00;">[OK] IPC Bridge Active</div>`;
+        ipcRenderer.send('request-hardware-status');
+    } else {
+        debugLog.innerHTML += `<div style="color: #FF3333;">[FAIL] IPC Bridge Disconnected</div>`;
+    }
+};
+
+// --- KEYBOARD CONTROLS ---
+let autoWinInterval = null;
+
+window.triggerOrganicWin = () => {
+    if (autoWinInterval) return; 
+    window.simulatedScore = 0; 
+    autoWinInterval = setInterval(() => {
+        window.simulatedScore += 5; 
+        if (window.simulatedScore >= 100) {
+            clearInterval(autoWinInterval);
+            autoWinInterval = null;
+            setTimeout(() => { window.simulatedScore = null; }, 1000); 
+        }
+    }, 50);
+};
+
 function setupKeyboardOverrides() {
     window.addEventListener('keydown', (e) => {
-        if (e.key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } 
-        if (e.key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } 
-        if (e.key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(100); } 
-        // Admin Force Quit Shortcut
+        const key = e.key.toLowerCase(); 
+
+        if (key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } 
+        if (key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } 
+        if (key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(100); } 
+        
+        if (key === 'w' && currentClipName === "clip_game") { window.triggerOrganicWin(); }
+        if (key === 'd') { window.vendNextAvailableItem(); }
+        if (key === '`' || key === '~') { window.runDiagnostic(); }
         if (e.key === 'Escape' && e.shiftKey) { window.close(); }
     });
 

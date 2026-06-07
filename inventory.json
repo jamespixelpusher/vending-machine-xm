@@ -1,11 +1,11 @@
 [
     {
         "motor": 1,
-        "stock": 8
+        "stock": 0
     },
     {
         "motor": 2,
-        "stock": 10
+        "stock": 9
     },
     {
         "motor": 3,
