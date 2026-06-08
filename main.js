@@ -5,9 +5,10 @@ const { SerialPort } = require('serialport');
 let mainWindow;
 let arduinoPort = null;
 let isHardwareConnected = false; 
+let isConnecting = false; // Prevents spamming the port during a micro-disconnect
 
 // ==========================================
-// THE ACTIVE HEARTBEAT (SELF-HEALING POLLING)
+// THE BULLETPROOF HARDWARE HEARTBEAT
 // ==========================================
 function startHardwareHeartbeat() {
     // Actively scan the physical USB ports every 2 seconds
@@ -24,52 +25,80 @@ function startHardwareHeartbeat() {
 
             if (targetPort) {
                 // STATUS: ARDUINO IS PLUGGED IN
-                if (!isHardwareConnected) {
-                    console.log(`[SERIAL SUCCESS] Arduino found on: ${targetPort.path}`);
+                if (!isHardwareConnected && !isConnecting) {
+                    isConnecting = true; // Lock the connection sequence
+                    console.log(`[SERIAL INIT] Arduino detected. Letting OS stabilize port: ${targetPort.path}...`);
                     
-                    // Create a fresh connection
-                    arduinoPort = new SerialPort({
-                        path: targetPort.path, 
-                        baudRate: 9600,
-                        autoOpen: true
-                    });
-
-                    arduinoPort.on('error', (err) => console.log('[SERIAL ERROR]', err.message));
-                    
-                    isHardwareConnected = true;
-                    
-                    // Tell the UI to turn green and dismiss the panel
-                    if (mainWindow) {
-                        mainWindow.webContents.send('hardware-status', { 
-                            connected: true, 
-                            port: targetPort.path 
-                        });
+                    // Nuke any ghost ports from previous micro-disconnects
+                    if (arduinoPort) {
+                        if (arduinoPort.isOpen) arduinoPort.close();
+                        arduinoPort.removeAllListeners();
+                        arduinoPort = null;
                     }
+
+                    // Wait 1 second before grabbing it to avoid "Resource Busy" OS locks
+                    setTimeout(() => {
+                        try {
+                            arduinoPort = new SerialPort({
+                                path: targetPort.path, 
+                                baudRate: 9600,
+                                autoOpen: true
+                            });
+
+                            arduinoPort.on('open', () => {
+                                console.log(`[SERIAL SUCCESS] Rock solid connection established on: ${targetPort.path}`);
+                                isHardwareConnected = true;
+                                isConnecting = false; // Unlock
+                                
+                                if (mainWindow) {
+                                    mainWindow.webContents.send('hardware-status', { connected: true, port: targetPort.path });
+                                }
+                            });
+
+                            arduinoPort.on('error', (err) => {
+                                console.log('[SERIAL BIND ERROR]', err.message);
+                                isConnecting = false; // Unlock so it tries again on the next pulse
+                            });
+
+                            // Instant trigger if the physical cable wiggles
+                            arduinoPort.on('close', () => {
+                                console.log('[SERIAL WARNING] Connection unexpectedly dropped by Mac OS!');
+                                isHardwareConnected = false;
+                            });
+
+                        } catch (err) {
+                            console.log('[SERIAL FATAL] Failed to create port: ', err.message);
+                            isConnecting = false;
+                        }
+                    }, 1000); 
                 }
             } else {
                 // STATUS: ARDUINO IS MISSING
-                if (isHardwareConnected) {
-                    console.log('[SERIAL WARNING] Arduino physically unplugged!');
+                if (isHardwareConnected || arduinoPort) {
+                    console.log('[SERIAL OFFLINE] Arduino physically missing from USB bus.');
                     isHardwareConnected = false;
+                    isConnecting = false;
                     
-                    // Force close the ghost port so it doesn't jam when replugged
-                    if (arduinoPort && arduinoPort.isOpen) {
-                        arduinoPort.close();
+                    // Aggressive cleanup
+                    if (arduinoPort) {
+                        if (arduinoPort.isOpen) arduinoPort.close();
+                        arduinoPort.removeAllListeners();
+                        arduinoPort = null;
                     }
                 }
 
-                // Constantly remind the UI that we are disconnected so the panel pops up/stays up
+                // Constantly remind the UI that we are disconnected
                 if (mainWindow) {
                     mainWindow.webContents.send('hardware-status', { 
                         connected: false, 
-                        error: 'USB cable disconnected. Waiting for Arduino...' 
+                        error: 'USB connection lost. Check cables!' 
                     });
                 }
             }
         } catch (err) {
-            console.error('[SERIAL FATAL] Port scan failed: ', err);
+            console.error('[SERIAL SCAN FATAL] Port scan failed: ', err);
         }
-    }, 2000); // 2000ms = 2 seconds
+    }, 2000); // 2-second polling
 }
 
 // ==========================================
@@ -90,6 +119,9 @@ function createWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, 'src/index.html'));
+    
+    // Open DevTools for debugging
+    mainWindow.webContents.openDevTools();
     
     // Once the UI loads, start the heartbeat immediately
     mainWindow.webContents.on('did-finish-load', () => {

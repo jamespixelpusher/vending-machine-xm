@@ -3,7 +3,7 @@ let ipcRenderer = null;
 let fs = null;
 let path = null;
 let inventoryFilePath = null;
-let isHardwareConnected = true; // Track state to prevent log spam
+let isHardwareConnected = true; 
 
 const getRequire = () => {
     if (typeof require !== 'undefined') return require;
@@ -22,20 +22,17 @@ if (nodeRequire) {
         inventoryFilePath = path.join(process.cwd(), 'inventory.json');
     }
 
-    // --- SMART DIAGNOSTIC LISTENER ---
     ipcRenderer.on('hardware-status', (event, data) => {
         const debugPanel = document.getElementById('debug-panel');
         const debugLog = document.getElementById('debug-log');
         
         if (!data.connected) {
-            // Only log the error once so we don't spam the screen every 3 seconds
             if (isHardwareConnected || debugPanel.style.display !== 'block') {
                 debugPanel.style.display = 'block';
                 debugLog.innerHTML += `<div style="color: #FF3333;">[SCANNING] ${data.error}</div>`;
             }
             isHardwareConnected = false;
         } else {
-            // When it reconnects, print success and auto-hide after 2.5 seconds
             if (!isHardwareConnected) {
                 debugLog.innerHTML += `<div style="color: #00FF00;">[OK] ARDUINO CONNECTED (${data.port})</div>`;
                 isHardwareConnected = true;
@@ -45,8 +42,6 @@ if (nodeRequire) {
                 }, 2500);
             }
         }
-        
-        // Auto-scroll log to bottom
         debugLog.scrollTop = debugLog.scrollHeight;
     });
 
@@ -61,6 +56,10 @@ let baTestInterval = null;
 let isDevMode = false;
 let gameDurationTimeout = null;
 let gameVolumePollInterval = null;
+
+// QA TEST MODE VARIABLES
+let qaInterval = null;
+let qaMotor = 1;
 
 // --- INVENTORY MANAGEMENT ---
 const defaultInventory = [
@@ -349,6 +348,24 @@ window.runDiagnostic = () => {
     }
 };
 
+// --- QA STRESS TEST MODULE ---
+window.toggleQAMode = () => {
+    if (qaInterval) {
+        clearInterval(qaInterval);
+        qaInterval = null;
+        console.log("[QA MODE] Sequence Terminated.");
+    } else {
+        console.log("[QA MODE] INITIATED. Firing sequential loop...");
+        qaMotor = 1;
+        qaInterval = setInterval(() => {
+            console.log(`[QA MODE] Stress testing Motor ${qaMotor}...`);
+            if (ipcRenderer) ipcRenderer.send('vend-item', qaMotor);
+            qaMotor++;
+            if (qaMotor > 8) qaMotor = 1; // Loop back to 1
+        }, 5000); // 5000ms delay safely spaces out the motor runs
+    }
+};
+
 // --- KEYBOARD CONTROLS ---
 let autoWinInterval = null;
 
@@ -369,10 +386,30 @@ function setupKeyboardOverrides() {
     window.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase(); 
 
-        if (key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } 
-        if (key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } 
-        if (key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(100); } 
+        // 1. QA STRESS TEST (Ctrl + Shift + Q)
+        if (e.ctrlKey && e.shiftKey && key === 'q') {
+            window.toggleQAMode();
+            return;
+        }
+
+        // 2. SPECIFIC MOTOR OVERRIDES (Shift + 1 through 8)
+        if (e.shiftKey && e.code.startsWith('Digit')) {
+            const motorNumber = parseInt(e.code.replace('Digit', ''));
+            if (motorNumber >= 1 && motorNumber <= 8) {
+                console.log(`[ADMIN OVERRIDE] Directly triggering Motor ${motorNumber}`);
+                if (ipcRenderer) ipcRenderer.send('vend-item', motorNumber);
+                return; 
+            }
+        }
+
+        // 3. VOLUME TEST VALUES (Press 1, 2, or 3 without Shift)
+        if (!e.shiftKey && !e.ctrlKey) {
+            if (key === '1') { if (window.setSimulatedScore) window.setSimulatedScore(45); } 
+            if (key === '2') { if (window.setSimulatedScore) window.setSimulatedScore(70); } 
+            if (key === '3') { if (window.setSimulatedScore) window.setSimulatedScore(100); } 
+        }
         
+        // 4. GAMEPLAY OVERRIDES
         if (key === 'w' && currentClipName === "clip_game") { window.triggerOrganicWin(); }
         if (key === 'd') { window.vendNextAvailableItem(); }
         if (key === '`' || key === '~') { window.runDiagnostic(); }
@@ -380,7 +417,7 @@ function setupKeyboardOverrides() {
     });
 
     window.addEventListener('keyup', (e) => {
-        if (['1', '2', '3'].includes(e.key)) {
+        if (!e.shiftKey && ['1', '2', '3'].includes(e.key)) {
             if (window.setSimulatedScore) window.setSimulatedScore(null); 
         }
     });
