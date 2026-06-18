@@ -5,18 +5,34 @@ const { SerialPort } = require('serialport');
 let mainWindow;
 let arduinoPort = null;
 let isHardwareConnected = false; 
-let isConnecting = false; // Prevents spamming the port during a micro-disconnect
+let isConnecting = false; 
+
+// QA TRACKING VARIABLES
+let electronRequestedDrops = 0;
+let arduinoConfirmedDrops = 0;
+let usbDisconnects = 0;
+let pendingVends = []; // The Recovery Queue
+
+function broadcastQAStats() {
+    if (mainWindow) {
+        mainWindow.webContents.send('qa-stats', { 
+            requested: electronRequestedDrops, 
+            confirmed: arduinoConfirmedDrops, 
+            disconnects: usbDisconnects,
+            queued: pendingVends.length
+        });
+    }
+}
 
 // ==========================================
-// THE BULLETPROOF HARDWARE HEARTBEAT
+// THE HYPER-POLLING HEARTBEAT
 // ==========================================
 function startHardwareHeartbeat() {
-    // Actively scan the physical USB ports every 2 seconds
+    // Scan every 500ms for lightning-fast detection
     setInterval(async () => {
         try {
             const ports = await SerialPort.list();
             
-            // Look for the physical footprint of the Arduino
             const targetPort = ports.find(p => 
                 p.path.includes('usbmodem') || 
                 p.path.includes('usbserial') || 
@@ -24,19 +40,17 @@ function startHardwareHeartbeat() {
             );
 
             if (targetPort) {
-                // STATUS: ARDUINO IS PLUGGED IN
                 if (!isHardwareConnected && !isConnecting) {
-                    isConnecting = true; // Lock the connection sequence
-                    console.log(`[SERIAL INIT] Arduino detected. Letting OS stabilize port: ${targetPort.path}...`);
+                    isConnecting = true; 
+                    console.log(`[SERIAL INIT] Arduino detected. Stabilizing: ${targetPort.path}...`);
                     
-                    // Nuke any ghost ports from previous micro-disconnects
                     if (arduinoPort) {
                         if (arduinoPort.isOpen) arduinoPort.close();
                         arduinoPort.removeAllListeners();
                         arduinoPort = null;
                     }
 
-                    // Wait 1 second before grabbing it to avoid "Resource Busy" OS locks
+                    // Keep the 1000ms buffer so Mac OS doesn't throw a Resource Busy error
                     setTimeout(() => {
                         try {
                             arduinoPort = new SerialPort({
@@ -45,25 +59,55 @@ function startHardwareHeartbeat() {
                                 autoOpen: true
                             });
 
+                            let serialBuffer = ''; // Buffer to catch incoming Arduino text
+
                             arduinoPort.on('open', () => {
-                                console.log(`[SERIAL SUCCESS] Rock solid connection established on: ${targetPort.path}`);
+                                console.log(`[SERIAL SUCCESS] Connected to: ${targetPort.path}`);
                                 isHardwareConnected = true;
-                                isConnecting = false; // Unlock
+                                isConnecting = false; 
                                 
-                                if (mainWindow) {
-                                    mainWindow.webContents.send('hardware-status', { connected: true, port: targetPort.path });
+                                if (mainWindow) mainWindow.webContents.send('hardware-status', { connected: true, port: targetPort.path });
+                                
+                                // RECOVERY QUEUE CHECK
+                                if (pendingVends.length > 0) {
+                                    console.log(`[RECOVERY] Firing ${pendingVends.length} missed vend!`);
+                                    // Wait 1.5s for relays to initialize, then fire the single queued vend
+                                    setTimeout(() => {
+                                        const recoveredVend = pendingVends.shift();
+                                        
+                                        // V2.0: Format string based on benchTest flag stored in the queue
+                                        const command = recoveredVend.benchTest ? `${recoveredVend.motor}\n` : `H${recoveredVend.motor}\n`;
+                                        arduinoPort.write(command);
+                                        
+                                        broadcastQAStats();
+                                    }, 1500);
+                                }
+                            });
+
+                            arduinoPort.on('data', (data) => {
+                                serialBuffer += data.toString();
+                                if (serialBuffer.includes('\n')) {
+                                    const lines = serialBuffer.split('\n');
+                                    serialBuffer = lines.pop(); // Keep incomplete fragments
+                                    lines.forEach(line => {
+                                        if (line.includes('HOMING_COMPLETE') || line.includes('BLIND_VEND_COMPLETE')) {
+                                            arduinoConfirmedDrops++;
+                                            broadcastQAStats();
+                                        }
+                                    });
                                 }
                             });
 
                             arduinoPort.on('error', (err) => {
                                 console.log('[SERIAL BIND ERROR]', err.message);
-                                isConnecting = false; // Unlock so it tries again on the next pulse
+                                isConnecting = false; 
                             });
 
-                            // Instant trigger if the physical cable wiggles
                             arduinoPort.on('close', () => {
-                                console.log('[SERIAL WARNING] Connection unexpectedly dropped by Mac OS!');
+                                console.log('[SERIAL WARNING] Connection dropped by OS!');
                                 isHardwareConnected = false;
+                                usbDisconnects++;
+                                broadcastQAStats();
                             });
 
                         } catch (err) {
@@ -73,13 +117,13 @@ function startHardwareHeartbeat() {
                     }, 1000); 
                 }
             } else {
-                // STATUS: ARDUINO IS MISSING
                 if (isHardwareConnected || arduinoPort) {
-                    console.log('[SERIAL OFFLINE] Arduino physically missing from USB bus.');
+                    console.log('[SERIAL OFFLINE] Arduino missing.');
                     isHardwareConnected = false;
                     isConnecting = false;
+                    usbDisconnects++;
+                    broadcastQAStats();
                     
-                    // Aggressive cleanup
                     if (arduinoPort) {
                         if (arduinoPort.isOpen) arduinoPort.close();
                         arduinoPort.removeAllListeners();
@@ -87,18 +131,14 @@ function startHardwareHeartbeat() {
                     }
                 }
 
-                // Constantly remind the UI that we are disconnected
                 if (mainWindow) {
-                    mainWindow.webContents.send('hardware-status', { 
-                        connected: false, 
-                        error: 'USB connection lost. Check cables!' 
-                    });
+                    mainWindow.webContents.send('hardware-status', { connected: false, error: 'USB connection lost.' });
                 }
             }
         } catch (err) {
             console.error('[SERIAL SCAN FATAL] Port scan failed: ', err);
         }
-    }, 2000); // 2-second polling
+    }, 500); 
 }
 
 // ==========================================
@@ -109,6 +149,7 @@ function createWindow() {
         width: 1920,
         height: 1080,
         kiosk: true, 
+        alwaysOnTop: true, // The Ultimate Hammer
         autoHideMenuBar: true,
         backgroundColor: '#000000', 
         webPreferences: {
@@ -120,10 +161,14 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'src/index.html'));
     
-    // Open DevTools for debugging
-    mainWindow.webContents.openDevTools();
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+        mainWindow.focus();
+    });
     
-    // Once the UI loads, start the heartbeat immediately
+    // Uncomment the line below if you want DevTools to open automatically
+    // mainWindow.webContents.openDevTools(); 
+    
     mainWindow.webContents.on('did-finish-load', () => {
         startHardwareHeartbeat();
     });
@@ -132,11 +177,13 @@ function createWindow() {
 app.whenReady().then(() => {
     session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === 'media');
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === 'media'));
-
+    
     createWindow();
-
-    app.on('activate', function () {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    
+    app.focus({ steal: true }); // Steal focus from macOS
+    
+    app.on('activate', function () { 
+        if (BrowserWindow.getAllWindows().length === 0) createWindow(); 
     });
 });
 
@@ -145,26 +192,27 @@ app.on('window-all-closed', function () {
 });
 
 // ==========================================
-// THE HARDWARE BRIDGE (IPC LISTENERS)
+// THE HARDWARE BRIDGE
 // ==========================================
-ipcMain.on('vend-item', (event, rowNumber) => {
+ipcMain.on('vend-item', (event, payload) => {
+    electronRequestedDrops++;
+    broadcastQAStats();
+
+    // V2.0: EXTRACT THE NEW PAYLOAD OBJECT
+    const rowNumber = payload.motor;
+    const isBenchTest = payload.benchTest;
+    
+    // V2.0: FORMAT THE COMMAND (Number only for bench test, 'H' prefix for production)
+    const command = isBenchTest ? `${rowNumber}\n` : `H${rowNumber}\n`;
+
     if (arduinoPort && arduinoPort.isOpen) {
-        arduinoPort.write(`H${rowNumber}\n`, (err) => {
+        arduinoPort.write(command, (err) => {
             if (err) return console.log('[SERIAL ERROR] Failed to send: ', err.message);
-            console.log(`[SERIAL SUCCESS] Sent command 'H${rowNumber}' to machine.`);
         });
     } else {
-        console.log('[SERIAL ERROR] Cannot vend. Arduino is not connected.');
-    }
-});
-
-// If the user manually clicks "Run Diagnostic" (~ key)
-ipcMain.on('request-hardware-status', (event) => {
-    if (mainWindow) {
-        mainWindow.webContents.send('hardware-status', { 
-            connected: isHardwareConnected, 
-            error: isHardwareConnected ? null : 'USB cable disconnected. Waiting for Arduino...',
-            port: isHardwareConnected && arduinoPort ? arduinoPort.path : null
-        });
+        // THE ANTI-JACKPOTTING FIX
+        console.log(`[QUEUED] Arduino offline. Queuing Row ${rowNumber} (Bench Test: ${isBenchTest})`);
+        pendingVends = [{ motor: rowNumber, benchTest: isBenchTest }]; 
+        broadcastQAStats();
     }
 });

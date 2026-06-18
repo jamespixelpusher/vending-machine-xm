@@ -45,9 +45,36 @@ if (nodeRequire) {
         debugLog.scrollTop = debugLog.scrollHeight;
     });
 
+    // LISTENER FOR THE QA HUD STATS
+    ipcRenderer.on('qa-stats', (event, stats) => {
+        const qaPanel = document.getElementById('qa-live-stats');
+        if (qaPanel) {
+            qaPanel.innerHTML = `
+                <div style="font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #FFD200;">QA STRESS TEST LIVE</div>
+                <div>Electron Requested: <span style="color:#00FF00;">${stats.requested}</span></div>
+                <div>Arduino Confirmed: <span style="color:#00FF00;">${stats.confirmed}</span></div>
+                <div>Missed Drops: <span style="color:#E21836;">${stats.requested - stats.confirmed}</span></div>
+                <hr style="border-color: #555; margin: 10px 0;">
+                <div>USB Disconnects: <span style="color:#FFD200;">${stats.disconnects}</span></div>
+                <div>Queued Recovery Vends: <span style="color:#00FF00;">${stats.queued}</span></div>
+            `;
+        }
+    });
+
 } else {
     console.warn("[DEV MODE] Standard browser detected.");
 }
+
+// --- DEV MODE ---
+window.applyDevMode = () => {
+    const checkbox = document.getElementById('check-devmode-main');
+    isDevMode = checkbox.checked;
+
+    const wrap = document.getElementById('dev-toggle-wrap');
+    if (wrap) wrap.classList.toggle('active', isDevMode);
+
+    console.log(`[SYSTEM] Dev Mode: ${isDevMode ? 'ON — inventory protected, relay testing active' : 'OFF'}`);
+};
 
 // --- GAME STATE ---
 let currentClipName = null;
@@ -149,14 +176,18 @@ window.vendNextAvailableItem = () => {
     let availableMotor = window.motorInventory.find(m => m.stock > 0);
 
     if (availableMotor) {
-        availableMotor.stock -= 1;
-        window.saveInventory(); 
-        
+        if (!isDevMode) {
+            availableMotor.stock -= 1;
+            window.saveInventory();
+        } else {
+            console.log(`[DEV MODE] Inventory protected. Relay command firing for Row ${availableMotor.motor}.`);
+        }
+
         console.log(`Dispensing from Row ${availableMotor.motor}.`);
         if (ipcRenderer) {
             ipcRenderer.send('vend-item', availableMotor.motor);
         }
-        return true; 
+        return true;
     } else {
         console.log("CRITICAL: Machine is completely empty!");
         return false;
@@ -166,8 +197,9 @@ window.vendNextAvailableItem = () => {
 // --- CORE GAME ENGINE ---
 window.onAnimateReady = () => {
     if (createjs.Touch.isSupported()) createjs.Touch.enable(stage);
-    setupKeyboardOverrides(); 
+    setupKeyboardOverrides();
     window.checkLowStock();
+    window.applyCopy();
 };
 
 window.handleMicInit = async () => {
@@ -208,7 +240,6 @@ window.runCalibration = () => {
 };
 
 window.updateTuning = () => {
-    isDevMode = document.getElementById("check-devmode").checked;
     const target = parseInt(document.getElementById("slide-target").value);
     const boost = parseFloat(document.getElementById("slide-boost").value);
     const deepOnly = document.getElementById("check-deep").checked;
@@ -228,6 +259,10 @@ window.updateTuning = () => {
 window.launchKiosk = () => {
     clearInterval(baTestInterval);
     document.getElementById("ba-setup-screen").style.display = "none";
+
+    const devBanner = document.getElementById('dev-mode-banner');
+    if (devBanner) devBanner.style.display = isDevMode ? 'block' : 'none';
+
     const animContainer = document.getElementById("animation_container");
     animContainer.style.display = "block";
     setTimeout(() => {
@@ -249,7 +284,13 @@ function hideAllClips() {
     });
 }
 
+window.handleIdleTap = () => {
+    document.getElementById('idle-tap-btn').style.display = 'none';
+    transitionTo("clip_countdown");
+};
+
 function transitionTo(newClipName) {
+    document.getElementById('idle-tap-btn').style.display = 'none';
     targetClipName = newClipName;
     if (currentClipName && window.mcRoot.clip_content[currentClipName]) {
         window.mcRoot.clip_content[currentClipName].gotoAndPlay("anim_out");
@@ -281,12 +322,7 @@ window.onIntroComplete = () => {
 
     switch(currentClipName) {
         case "clip_idle":
-            const beginBtn = activeClip.button_begin;
-            if (beginBtn) {
-                beginBtn.cursor = "pointer"; 
-                beginBtn.removeAllEventListeners("click"); 
-                beginBtn.on("click", () => { transitionTo("clip_countdown"); });
-            }
+            document.getElementById('idle-tap-btn').style.display = 'block';
             break;
 
         case "clip_countdown":
@@ -350,19 +386,32 @@ window.runDiagnostic = () => {
 
 // --- QA STRESS TEST MODULE ---
 window.toggleQAMode = () => {
+    let qaPanel = document.getElementById('qa-live-stats');
+
     if (qaInterval) {
         clearInterval(qaInterval);
         qaInterval = null;
         console.log("[QA MODE] Sequence Terminated.");
+        if (qaPanel) qaPanel.remove();
     } else {
-        console.log("[QA MODE] INITIATED. Firing sequential loop...");
+        console.log("[QA MODE] INITIATED.");
         qaMotor = 1;
+
+        // Build the physical HUD on the screen
+        if (!qaPanel) {
+            qaPanel = document.createElement('div');
+            qaPanel.id = 'qa-live-stats';
+            qaPanel.style.cssText = 'position:absolute; top:20px; right:20px; background:rgba(12, 35, 64, 0.95); color:#fff; padding:20px; border:3px solid #E21836; border-radius:10px; z-index:10000; font-family:monospace; font-size:18px; box-shadow: 0px 5px 15px rgba(0,0,0,0.5); min-width: 300px;';
+            qaPanel.innerHTML = `<div style="font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #FFD200;">QA STRESS TEST LIVE</div><div>Awaiting Data...</div>`;
+            document.body.appendChild(qaPanel);
+        }
+
         qaInterval = setInterval(() => {
             console.log(`[QA MODE] Stress testing Motor ${qaMotor}...`);
             if (ipcRenderer) ipcRenderer.send('vend-item', qaMotor);
             qaMotor++;
-            if (qaMotor > 8) qaMotor = 1; // Loop back to 1
-        }, 5000); // 5000ms delay safely spaces out the motor runs
+            if (qaMotor > 8) qaMotor = 1; 
+        }, 5000); 
     }
 };
 
