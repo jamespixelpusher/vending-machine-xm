@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <title>Oh Henry XM</title>
     <style>
-        body { margin: 0; background-color: #000; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; overflow: hidden; }
+        @font-face {
+            font-family: 'Praktika Rnd ExtraBold Cnd';
+            src: url('fonts/PraktikaRnd-ExtraBoldCnd.otf') format('opentype');
+            font-weight: bold;
+            font-style: normal;
+        }
+        body { margin: 0; background-color: #FFD700; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; overflow: hidden; }
         
         #animation_container {
             position: absolute; margin: auto; left: 0; right: 0; top: 0; bottom: 0;
@@ -46,15 +52,24 @@
         #ba-test-meter-fill { position: absolute; top: 0; left: 0; width: 0%; height: 100%; background: #E21836; }
         .meter-line { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(0,0,0,0.3); z-index: 5; }
 
-        #vu-meter-container {
-            position: absolute; left: 100px; top: 340px; width: 60px; height: 400px; 
-            background: rgba(12, 35, 64, 0.8); border: 6px solid #FFD200; border-radius: 30px; 
-            overflow: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100;
+        /* --- SPECTRUM BACKGROUND --- */
+        #spectrum-bg {
+            display: none; position: absolute; bottom: 0; left: 0; right: 0;
+            height: 320px; align-items: flex-end; padding: 0 40px 30px;
+            pointer-events: none; z-index: 0;
         }
-        #vu-meter-fill {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 0%; 
-            background: linear-gradient(to top, #FFD200, #E21836);
+        .spectrum-meter {
+            display: flex; align-items: flex-end; gap: 8px;
+            height: 280px; width: 100%;
         }
+        .spectrum-column {
+            display: flex; flex-direction: column-reverse; gap: 6px; flex: 1;
+        }
+        .spectrum-segment {
+            width: 100%; height: 14px; border-radius: 5px;
+            opacity: 0; transition: opacity 0.04s ease-out;
+        }
+        .spectrum-segment.active { opacity: 1; }
 
         .cal-box { background: #f4f4f4; padding: 20px; border-radius: 10px; margin: 20px 0; border: 2px solid #ddd; text-align: left; }
         
@@ -83,9 +98,71 @@
         }
         
         /* NEW: Added scrolling logic to the log so it doesn't run off screen */
-        #debug-log { 
-            font-size: 14px; line-height: 1.5; margin-bottom: 15px; 
-            max-height: 250px; overflow-y: auto; 
+        #debug-log {
+            font-size: 14px; line-height: 1.5; margin-bottom: 15px;
+            max-height: 250px; overflow-y: auto;
+        }
+
+        /* --- LANGUAGE TOGGLE --- */
+        #lang-toggle-wrap {
+            position: absolute; top: 20px; left: 20px; z-index: 10000;
+            display: flex; gap: 6px;
+        }
+        .lang-btn {
+            background: rgba(12, 35, 64, 0.88); color: #FFD200;
+            border: 2px solid #FFD200; border-radius: 20px;
+            padding: 9px 18px; font-size: 13px; font-weight: 900;
+            letter-spacing: 2px; cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .lang-btn.active { background: #FFD200; color: #0C2340; }
+        .lang-btn:hover:not(.active) { background: rgba(255, 210, 0, 0.15); }
+
+        /* --- DEV MODE TOGGLE --- */
+        #dev-toggle-wrap {
+            position: absolute; top: 20px; right: 20px; z-index: 10000;
+            display: flex; align-items: center; gap: 12px;
+            background: rgba(12, 35, 64, 0.88); border: 2px solid #FFD200;
+            border-radius: 30px; padding: 9px 18px;
+            cursor: pointer; user-select: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        #dev-toggle-wrap.active {
+            border-color: #E21836;
+            background: rgba(226, 24, 54, 0.15);
+        }
+        #dev-toggle-label {
+            color: #FFD200; font-size: 12px; font-weight: 900;
+            letter-spacing: 2px; text-transform: uppercase;
+        }
+        #dev-toggle-wrap.active #dev-toggle-label { color: #E21836; }
+        .dev-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+        .dev-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .dev-switch-track {
+            position: absolute; inset: 0; background: #555;
+            border-radius: 24px; transition: background 0.25s;
+        }
+        .dev-switch-track:before {
+            content: ""; position: absolute;
+            width: 18px; height: 18px; left: 3px; top: 3px;
+            background: #fff; border-radius: 50%; transition: transform 0.25s;
+        }
+        .dev-switch input:checked + .dev-switch-track { background: #E21836; }
+        .dev-switch input:checked + .dev-switch-track:before { transform: translateX(20px); }
+
+        /* --- IDLE TAP OVERLAY --- */
+        #idle-tap-btn {
+            display: none; position: absolute; inset: 0;
+            z-index: 10; cursor: pointer;
+        }
+
+        /* --- DEV MODE GAMEPLAY BANNER --- */
+        #dev-mode-banner {
+            display: none; position: absolute; top: 14px; right: 14px;
+            background: #E21836; color: #FFD200;
+            font-size: 11px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;
+            padding: 5px 14px; border-radius: 20px; border: 2px solid #FFD200;
+            z-index: 1000; pointer-events: none;
         }
     </style>
     <script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
@@ -93,15 +170,17 @@
     <script>
         var canvas, stage, exportRoot, anim_container, dom_overlay_container, fnStartAnimation;
         function init() {
-            canvas = document.getElementById("canvas");
-            anim_container = document.getElementById("animation_container");
-            dom_overlay_container = document.getElementById("dom_overlay_container");
-            var comp = AdobeAn.getComposition("8921704EE35344D5B30237EACC7B31AA");
-            var lib = comp.getLibrary();
-            var loader = new createjs.LoadQueue(false);
-            loader.addEventListener("fileload", function(evt){handleFileLoad(evt,comp)});
-            loader.addEventListener("complete", function(evt){handleComplete(evt,comp)});
-            loader.loadManifest(lib.properties.manifest);
+            document.fonts.ready.then(function() {
+                canvas = document.getElementById("canvas");
+                anim_container = document.getElementById("animation_container");
+                dom_overlay_container = document.getElementById("dom_overlay_container");
+                var comp = AdobeAn.getComposition("8921704EE35344D5B30237EACC7B31AA");
+                var lib = comp.getLibrary();
+                var loader = new createjs.LoadQueue(false);
+                loader.addEventListener("fileload", function(evt){handleFileLoad(evt,comp)});
+                loader.addEventListener("complete", function(evt){handleComplete(evt,comp)});
+                loader.loadManifest(lib.properties.manifest);
+            });
         }
         function handleFileLoad(evt, comp) {
             var images = comp.getImages();    
@@ -115,7 +194,7 @@
             for(i=0; i<ssMetadata.length; i++) {
                 ss[ssMetadata[i].name] = new createjs.SpriteSheet( {"images": [queue.getResult(ssMetadata[i].name)], "frames": ssMetadata[i].frames} )
             }
-            exportRoot = new lib.OhHenry();
+            exportRoot = new lib.OhHenryfrenchenglish();
             window.mcRoot = exportRoot; 
             stage = new lib.Stage(canvas);  
             fnStartAnimation = function() {
@@ -139,7 +218,21 @@
 
     <div id="low-stock-warning">We need more Oh Henry!</div>
     
+    <div id="dev-mode-banner">DEV MODE</div>
+
     <div id="ba-setup-screen">
+        <div id="lang-toggle-wrap">
+            <button id="lang-btn-en" class="lang-btn active" onclick="window.setLanguage('en')">EN</button>
+            <button id="lang-btn-fr" class="lang-btn"        onclick="window.setLanguage('fr')">FR</button>
+        </div>
+
+        <label id="dev-toggle-wrap" for="check-devmode-main">
+            <span id="dev-toggle-label">Dev Mode</span>
+            <div class="dev-switch">
+                <input type="checkbox" id="check-devmode-main" onchange="window.applyDevMode()">
+                <div class="dev-switch-track"></div>
+            </div>
+        </label>
         <div class="setup-panel">
             <h1 style="font-size: 36px; margin-top: 0; text-transform: uppercase; margin-bottom: 10px;">Kiosk Setup</h1>
             
@@ -153,16 +246,6 @@
                         <button id="btn-calibrate" onclick="window.runCalibration()" style="padding: 10px 20px; font-size: 16px; background: #0C2340; color: #FFD200; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Auto-Calibrate</button>
                         <div id="val-floor" style="font-size: 20px; font-weight: bold; color: #E21836;">Baseline Floor: 0%</div>
                     </div>
-                </div>
-
-                <div class="toggle-group">
-                    <label for="check-devmode">Enable Dev Mode</label>
-                    <input type="checkbox" id="check-devmode" onchange="window.updateTuning()">
-                </div>
-
-                <div class="toggle-group">
-                    <label style="color: #E21836;" for="check-benchtest">Disable Sensors (Bench Test)</label>
-                    <input type="checkbox" id="check-benchtest" onchange="window.updateTuning()">
                 </div>
 
                 <div class="toggle-group">
@@ -204,7 +287,10 @@
             <div id="inventory-controls" style="display: none; width: 100%;">
                 <div class="inventory-header">
                     <h2 style="margin: 0; color: #0C2340;">Load Machine</h2>
-                    <button onclick="window.fillAllInventory()" style="padding: 10px 20px; font-size: 14px; background: #0C2340; color: #FFD200; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Fill All to 10</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.fillAllInventory(2)" style="padding: 10px 20px; font-size: 14px; background: #555; color: #FFD200; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Fill All to 2</button>
+                        <button onclick="window.fillAllInventory(10)" style="padding: 10px 20px; font-size: 14px; background: #0C2340; color: #FFD200; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Fill All to 10</button>
+                    </div>
                 </div>
                 
                 <div class="inventory-grid" id="inventory-grid-container">
@@ -218,17 +304,21 @@
         </div>
     </div>
 
+    <div id="idle-tap-btn" onclick="window.handleIdleTap()"></div>
+
+    <div id="spectrum-bg">
+        <div class="spectrum-meter" id="spectrumMeter"></div>
+    </div>
+
     <div id="animation_container" style="width:1920px; height:1080px; display: none;">
         <canvas id="canvas" width="1920" height="1080" style="position: absolute; display: block;"></canvas>
         <div id="dom_overlay_container" style="pointer-events:none; overflow:hidden; width:1920px; height:1080px; position: absolute; left: 0px; top: 0px; display: block;"></div>
     </div>
 
-    <div id="vu-meter-container">
-        <div id="vu-meter-fill"></div>
-    </div>
 
     <script src="js/audioProcessor.js"></script>
     <script src="js/vuMeter.js"></script>
+    <script src="js/copy.js"></script>
     <script src="js/gameController.js"></script>
 </body>
 </html>

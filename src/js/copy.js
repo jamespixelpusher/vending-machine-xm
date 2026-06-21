@@ -74,24 +74,32 @@ window.applyCopy = () => {
     const c = window.mcRoot.clip_content;
 
     // clip_idle
-    set(c.clip_idle.clip_idle_headline, 'idle_headline');
-    set(c.clip_idle.clip_idle_cta,      'idle_cta');
+    set(c.clip_idle.clip_idle_headline_1, 'idle_headline_1');
+    set(c.clip_idle.clip_idle_headline_2, 'idle_headline_2');
+    set(c.clip_idle.clip_idle_headline_3, 'idle_headline_3');
+    set(c.clip_idle.clip_idle_cta,        'idle_cta');
 
     // clip_countdown (game_headline and game_prompt live here too)
-    set(c.clip_countdown.clip_countdown_tagline1, 'countdown_tagline1');
-    set(c.clip_countdown.clip_countdown_tagline2, 'countdown_tagline2');
-    set(c.clip_countdown.clip_game_headline,      'game_headline');
-    set(c.clip_countdown.clip_game_prompt,        'game_prompt');
+    set(c.clip_countdown.clip_countdown_tagline1_1, 'countdown_tagline1_1');
+    set(c.clip_countdown.clip_countdown_tagline1_2, 'countdown_tagline1_2');
+    set(c.clip_countdown.clip_countdown_tagline2,   'countdown_tagline2');
+    set(c.clip_countdown.clip_game_headline_1,    'game_headline_1');
+    set(c.clip_countdown.clip_game_headline_2,    'game_headline_2');
+    set(c.clip_countdown.clip_game_headline_3,    'game_headline_3');
+    set(c.clip_countdown.clip_game_prompt_1,      'game_prompt_1');
+    set(c.clip_countdown.clip_game_prompt_2,      'game_prompt_2');
 
     // clip_game
-    set(c.clip_game.clip_game_calculating, 'game_calculating');
-    set(c.clip_game.clip_game_level_low,  'game_level_low');
-    set(c.clip_game.clip_game_level_mid,  'game_level_mid');
-    set(c.clip_game.clip_game_level_high, 'game_level_high');
+    set(c.clip_game.clip_game_calculating,   'game_calculating');
+    set(c.clip_game.clip_game_level_low,     'game_level_low');
+    set(c.clip_game.clip_game_level_mid,     'game_level_mid');
+    set(c.clip_game.clip_game_level_high_1,  'game_level_high_1');
+    set(c.clip_game.clip_game_level_high_2,  'game_level_high_2');
 
     // clip_success
-    set(c.clip_success.clip_success_line1, 'success_line1');
-    set(c.clip_success.clip_success_line2, 'success_line2');
+    set(c.clip_success.clip_success_line1,   'success_line1');
+    set(c.clip_success.clip_success_line2_1, 'success_line2_1');
+    set(c.clip_success.clip_success_line2_2, 'success_line2_2');
 
     // clip_thanks — still sprite-based, no text fields yet
     // set(c.clip_thanks.clip_thanks_line1, 'thanks_line1');

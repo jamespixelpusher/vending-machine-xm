@@ -85,8 +85,9 @@ let gameDurationTimeout = null;
 let gameVolumePollInterval = null;
 
 // QA TEST MODE VARIABLES
-let qaInterval = null;
-let qaMotor = 1;
+let qaInterval = null;   // holds the active setTimeout handle
+let qaRunning = false;   // true while the stress test is active
+let qaDevMotorIndex = 0; // tracks position in the motor list for dev mode cycling
 
 // --- INVENTORY MANAGEMENT ---
 const defaultInventory = [
@@ -153,12 +154,12 @@ window.adjustStock = (index, amount) => {
     window.saveInventory(); 
 };
 
-window.fillAllInventory = () => {
+window.fillAllInventory = (count = 10) => {
     window.motorInventory.forEach((item, index) => {
-        item.stock = 10; 
-        document.getElementById(`stock-val-${index}`).innerText = "10";
+        item.stock = count;
+        document.getElementById(`stock-val-${index}`).innerText = count;
     });
-    window.saveInventory(); 
+    window.saveInventory();
 };
 
 window.showInventoryScreen = () => {
@@ -185,7 +186,7 @@ window.vendNextAvailableItem = () => {
 
         console.log(`Dispensing from Row ${availableMotor.motor}.`);
         if (ipcRenderer) {
-            ipcRenderer.send('vend-item', availableMotor.motor);
+            ipcRenderer.send('vend-item', { motor: availableMotor.motor, benchTest: false });
         }
         return true;
     } else {
@@ -312,6 +313,15 @@ function bringInNextClip() {
 
     activeClip.visible = true;
     activeClip.gotoAndPlay("anim_in");
+
+    // Re-apply copy after gotoAndPlay so Animate timeline keyframes
+    // don't overwrite programmatically-set language text
+    if (window.applyCopy) window.applyCopy();
+
+    // Idle loops in Animate — show tap overlay immediately, don't wait for onIntroComplete
+    if (currentClipName === "clip_idle") {
+        document.getElementById('idle-tap-btn').style.display = 'block';
+    }
 }
 
 window.onOutroComplete = () => { bringInNextClip(); };
@@ -321,33 +331,39 @@ window.onIntroComplete = () => {
     activeClip.gotoAndStop("active");
 
     switch(currentClipName) {
-        case "clip_idle":
-            document.getElementById('idle-tap-btn').style.display = 'block';
-            break;
-
         case "clip_countdown":
+            if (window.hideSpectrumBg) window.hideSpectrumBg();
             if (activeClip.countdown_anim) activeClip.countdown_anim.gotoAndPlay("countdown_start");
             break;
 
         case "clip_game":
+            if (window.showSpectrumBg) window.showSpectrumBg();
             if (window.startVUMeter) window.startVUMeter();
-            
+
             gameVolumePollInterval = setInterval(() => {
                 let currentVol = window.getGrumbleVolume ? window.getGrumbleVolume() : 0;
                 let target = window.audioTuning ? window.audioTuning.targetVolume : 80;
                 if (currentVol >= target) triggerWin();
-            }, 100); 
+            }, 100);
 
             gameDurationTimeout = setTimeout(() => { triggerWin(); }, 5000);
             break;
 
         case "clip_success":
+            if (window.hideSpectrumBg) window.hideSpectrumBg();
             setTimeout(() => { transitionTo("clip_idle"); }, 5000);
             break;
     }
 };
 
-window.onCountdownComplete = () => { transitionTo("clip_game"); };
+window.onCountdownComplete = () => {
+    // frame_319 calls this.stop() before this callback fires, so the clip is
+    // frozen at 319. Play forward 10 frames to reach frame 329 where
+    // onOutroComplete fires → bringInNextClip("clip_game").
+    targetClipName = "clip_game";
+    const countdown = window.mcRoot.clip_content.clip_countdown;
+    if (countdown) countdown.gotoAndPlay(320);
+};
 
 function triggerWin() {
     clearInterval(gameVolumePollInterval);
@@ -386,33 +402,85 @@ window.runDiagnostic = () => {
 
 // --- QA STRESS TEST MODULE ---
 window.toggleQAMode = () => {
-    let qaPanel = document.getElementById('qa-live-stats');
-
-    if (qaInterval) {
-        clearInterval(qaInterval);
-        qaInterval = null;
+    // --- STOP ---
+    if (qaRunning) {
+        qaRunning = false;
+        if (qaInterval) { clearTimeout(qaInterval); qaInterval = null; }
         console.log("[QA MODE] Sequence Terminated.");
-        if (qaPanel) qaPanel.remove();
-    } else {
-        console.log("[QA MODE] INITIATED.");
-        qaMotor = 1;
+        const panel = document.getElementById('qa-live-stats');
+        if (panel) panel.remove();
+        return;
+    }
 
-        // Build the physical HUD on the screen
-        if (!qaPanel) {
-            qaPanel = document.createElement('div');
-            qaPanel.id = 'qa-live-stats';
-            qaPanel.style.cssText = 'position:absolute; top:20px; right:20px; background:rgba(12, 35, 64, 0.95); color:#fff; padding:20px; border:3px solid #E21836; border-radius:10px; z-index:10000; font-family:monospace; font-size:18px; box-shadow: 0px 5px 15px rgba(0,0,0,0.5); min-width: 300px;';
-            qaPanel.innerHTML = `<div style="font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #FFD200;">QA STRESS TEST LIVE</div><div>Awaiting Data...</div>`;
-            document.body.appendChild(qaPanel);
+    // --- START ---
+    qaRunning = true;
+    qaDevMotorIndex = 0;
+    console.log("[QA MODE] INITIATED.");
+
+    let qaPanel = document.getElementById('qa-live-stats');
+    if (!qaPanel) {
+        qaPanel = document.createElement('div');
+        qaPanel.id = 'qa-live-stats';
+        qaPanel.style.cssText = 'position:absolute; top:20px; right:20px; background:rgba(12, 35, 64, 0.95); color:#fff; padding:20px; border:3px solid #E21836; border-radius:10px; z-index:10000; font-family:monospace; font-size:18px; box-shadow: 0px 5px 15px rgba(0,0,0,0.5); min-width: 300px;';
+        qaPanel.innerHTML = `<div style="font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #FFD200;">QA STRESS TEST LIVE</div><div>Awaiting Data...</div>`;
+        document.body.appendChild(qaPanel);
+    }
+
+    function stopTest(message) {
+        qaRunning = false;
+        qaInterval = null;
+        console.log(`[QA MODE] ${message}`);
+        const p = document.getElementById('qa-live-stats');
+        if (p) p.innerHTML += `<div style="margin-top:10px; color:#FF3333; font-weight:bold;">${message}</div>`;
+    }
+
+    function runNextVend() {
+        if (!qaRunning) return;
+
+        if (isDevMode) {
+            // DEV MODE: blind drop (benchTest: true) — Arduino runs relay 2.5s, no optocoupler needed.
+            // Depletes inventory so the full stock cycle can be validated.
+            const motor = window.motorInventory.find(m => m.stock > 0);
+            if (!motor) { stopTest("INVENTORY EMPTY — TEST STOPPED"); return; }
+            motor.stock -= 1;
+            window.saveInventory();
+            console.log(`[QA DEV] Blind drop Motor ${motor.motor} (stock now ${motor.stock})...`);
+            if (ipcRenderer) ipcRenderer.send('vend-item', { motor: motor.motor, benchTest: true });
+        } else {
+            // NORMAL MODE: full auto-home vend via inventory, motor cool-off buffer between drops
+            const result = window.vendNextAvailableItem();
+            if (!result) { stopTest("INVENTORY EMPTY — TEST STOPPED"); return; }
         }
 
-        qaInterval = setInterval(() => {
-            console.log(`[QA MODE] Stress testing Motor ${qaMotor}...`);
-            if (ipcRenderer) ipcRenderer.send('vend-item', qaMotor);
-            qaMotor++;
-            if (qaMotor > 8) qaMotor = 1; 
-        }, 5000); 
+        // Wait for Arduino to confirm (HOMING_COMPLETE or BLIND_VEND_COMPLETE),
+        // then pause 1s for motor cool-off before firing the next one.
+        // Fallback: if no confirmation in 10s, proceed anyway.
+        const COOLOFF_MS  = 1000;
+        const FALLBACK_MS = 10000;
+        let settled = false;
+
+        const proceed = () => {
+            if (settled || !qaRunning) return;
+            settled = true;
+            if (ipcRenderer) ipcRenderer.removeListener('vend-complete', onConfirm);
+            clearTimeout(fallback);
+            qaInterval = setTimeout(runNextVend, COOLOFF_MS);
+        };
+
+        const onConfirm = () => {
+            console.log('[QA] Arduino confirmed vend — cooling off 1s...');
+            proceed();
+        };
+
+        const fallback = setTimeout(() => {
+            console.log('[QA] No Arduino confirmation after 10s — proceeding anyway.');
+            proceed();
+        }, FALLBACK_MS);
+
+        if (ipcRenderer) ipcRenderer.on('vend-complete', onConfirm);
     }
+
+    runNextVend();
 };
 
 // --- KEYBOARD CONTROLS ---
@@ -446,7 +514,7 @@ function setupKeyboardOverrides() {
             const motorNumber = parseInt(e.code.replace('Digit', ''));
             if (motorNumber >= 1 && motorNumber <= 8) {
                 console.log(`[ADMIN OVERRIDE] Directly triggering Motor ${motorNumber}`);
-                if (ipcRenderer) ipcRenderer.send('vend-item', motorNumber);
+                if (ipcRenderer) ipcRenderer.send('vend-item', { motor: motorNumber, benchTest: false });
                 return; 
             }
         }

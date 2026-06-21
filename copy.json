@@ -1,46 +1,65 @@
 {
   "_notes": {
-    "line_breaks": "Use a pipe character | to force a line break. Example: 'LINE ONE|LINE TWO'. Animate text fields must be set to Multiline mode for breaks to render.",
-    "line_height": "lineHeight is the total distance in pixels between baselines (fontSize + Animate line spacing). e.g. fontSize 150 + Animate spacing -58 = lineHeight 92. Adjust per field as needed.",
+    "field_naming": "Multiline fields are split into numbered instances (_1, _2, _3). Each key maps directly to an Animate dynamic text field instance of the same name.",
     "thanks_screen": "thanks_line1 and thanks_line2 are placeholders — update once that screen is finalized.",
     "french_tagline": "Confirm countdown_tagline1/2 with client — an approved French brand tagline may already exist.",
-    "french_game_headline": "game_headline stylized spelling (GRRR etc.) needs creative sign-off for French version."
+    "french_game_headline": "game_headline stylized spelling needs creative sign-off for French version. game_headline_3 is intentionally empty in French (only 2 lines)."
   },
 
   "_config": {
-    "idle_headline":       { "lineHeight": null },
-    "idle_cta":            { "lineHeight": null },
-    "countdown_tagline1":  { "lineHeight": null },
-    "countdown_tagline2":  { "lineHeight": null },
-    "game_headline":       { "lineHeight": null },
-    "game_prompt":         { "lineHeight": null },
-    "game_calculating":    { "lineHeight": null },
-    "game_level_low":      { "lineHeight": null },
-    "game_level_mid":      { "lineHeight": null },
-    "game_level_high":     { "lineHeight": null },
-    "success_line1":       { "lineHeight": null },
-    "success_line2":       { "lineHeight": null },
-    "thanks_line1":        { "lineHeight": null },
-    "thanks_line2":        { "lineHeight": null }
+    "idle_headline_1":    { "lineHeight": null },
+    "idle_headline_2":    { "lineHeight": null },
+    "idle_headline_3":    { "lineHeight": null },
+    "idle_cta":           { "lineHeight": null },
+
+    "countdown_tagline1_1": { "lineHeight": null },
+    "countdown_tagline1_2": { "lineHeight": null },
+    "countdown_tagline2":   { "lineHeight": null },
+
+    "game_headline_1":    { "lineHeight": null },
+    "game_headline_2":    { "lineHeight": null },
+    "game_headline_3":    { "lineHeight": null },
+    "game_prompt_1":      { "lineHeight": null },
+    "game_prompt_2":      { "lineHeight": null },
+    "game_calculating":   { "lineHeight": null },
+    "game_level_low":     { "lineHeight": null },
+    "game_level_mid":     { "lineHeight": null },
+    "game_level_high_1":  { "lineHeight": null },
+    "game_level_high_2":  { "lineHeight": null },
+
+    "success_line1":      { "lineHeight": null },
+    "success_line2_1":    { "lineHeight": null },
+    "success_line2_2":    { "lineHeight": null },
+
+    "thanks_line1":       { "lineHeight": null },
+    "thanks_line2":       { "lineHeight": null }
   },
 
   "en": {
 
-    "idle_headline": "MAKE SOME NOISE|TO GET YOUR|OH HENRY!",
+    "idle_headline_1": "MAKE SOME NOISE",
+    "idle_headline_2": "TO GET YOUR",
+    "idle_headline_3": "OH HENRY!",
     "idle_cta": "TAP TO START.",
 
-    "countdown_tagline1": "TAKES CARE OF HUNGER.",
+    "countdown_tagline1_1": "TAKES CARE",
+    "countdown_tagline1_2": "OF HUNGER.",
     "countdown_tagline2": "AND THAT'S IT.",
 
-    "game_headline": "MAKE THAT|GRUMMMMBLEEE|NOISE",
-    "game_prompt": "LET'S HEAR|THAT GRUMBLE!",
+    "game_headline_1": "MAKE THAT",
+    "game_headline_2": "GRUMMMMBLEEE",
+    "game_headline_3": "NOISE",
+    "game_prompt_1": "LET'S HEAR",
+    "game_prompt_2": "THAT GRUMBLE!",
     "game_calculating": "CALCULATING HUNGER LEVEL",
     "game_level_low": "WANT OH HENRY!",
     "game_level_mid": "NEED OH HENRY!",
-    "game_level_high": "MUST HAVE OH HENRY!|RIGHT NOW",
+    "game_level_high_1": "MUST HAVE OH HENRY!",
+    "game_level_high_2": "RIGHT NOW",
 
     "success_line1": "HUNGER CONFIRMED",
-    "success_line2": "YOU NEED|AN OH HENRY!",
+    "success_line2_1": "YOU NEED",
+    "success_line2_2": "AN OH HENRY!",
 
     "thanks_line1": "PLACEHOLDER — THANKS SCREEN LINE 1",
     "thanks_line2": "PLACEHOLDER — THANKS SCREEN LINE 2"
@@ -49,21 +68,29 @@
 
   "fr": {
 
-    "idle_headline": "FAITES DU BRUIT|POUR OBTENIR|VOTRE OH HENRY!",
+    "idle_headline_1": "FAITES DU BRUIT",
+    "idle_headline_2": "POUR OBTENIR",
+    "idle_headline_3": "VOTRE OH HENRY!",
     "idle_cta": "APPUYEZ POUR COMMENCER.",
 
-    "countdown_tagline1": "ÇA S'OCCUPE DE LA FAIM.",
+    "countdown_tagline1_1": "ÇA S'OCCUPE",
+    "countdown_tagline1_2": "DE LA FAIM.",
     "countdown_tagline2": "POINT FINAL.",
 
-    "game_headline": "FAITES CE BRUIT|DE GRRRROGNEMENT",
-    "game_prompt": "QU'ON ENTENDE|CE GROGNEMENT!",
+    "game_headline_1": "FAITES CE BRUIT",
+    "game_headline_2": "DE GRRRROGNEMENT",
+    "game_headline_3": "",
+    "game_prompt_1": "QU'ON ENTENDE",
+    "game_prompt_2": "CE GROGNEMENT!",
     "game_calculating": "CALCUL DU NIVEAU DE FAIM",
     "game_level_low": "VEUT OH HENRY!",
     "game_level_mid": "BESOIN D'OH HENRY!",
-    "game_level_high": "DOIT AVOIR OH HENRY!|MAINTENANT",
+    "game_level_high_1": "DOIT AVOIR OH HENRY!",
+    "game_level_high_2": "MAINTENANT",
 
     "success_line1": "FAIM CONFIRMÉE",
-    "success_line2": "VOUS AVEZ BESOIN|D'UN OH HENRY!",
+    "success_line2_1": "VOUS AVEZ BESOIN",
+    "success_line2_2": "D'UN OH HENRY!",
 
     "thanks_line1": "PLACEHOLDER — ÉCRAN DE REMERCIEMENT LIGNE 1",
     "thanks_line2": "PLACEHOLDER — ÉCRAN DE REMERCIEMENT LIGNE 2"

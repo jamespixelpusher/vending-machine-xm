@@ -25,6 +25,41 @@ function broadcastQAStats() {
 }
 
 // ==========================================
+// ARDUINO PORT DETECTION
+// ==========================================
+// VID:PID pairs for Arduino Uno — official board and the three common clone chips.
+// If this Uno ever fails to connect, run the diagnostic (backtick key) and check
+// the console for the actual VID:PID, then add it here.
+const ARDUINO_UNO_PORTS = [
+    { vid: '2341', pid: '0043' }, // Official Uno R3 (ATmega16U2)
+    { vid: '2341', pid: '0001' }, // Official Uno R1/R2
+    { vid: '2341', pid: '0243' }, // Official Uno R3 (DFU bootloader mode)
+    { vid: '1a86', pid: '7523' }, // CH340G clone (most common cheap Uno)
+    { vid: '0403', pid: '6001' }, // FTDI FT232RL clone
+];
+
+function findArduinoPort(ports) {
+    // Pass 1: exact VID:PID match — locks onto this specific Uno, ignores everything else
+    const byVidPid = ports.find(p =>
+        p.vendorId && p.productId &&
+        ARDUINO_UNO_PORTS.some(known =>
+            known.vid === p.vendorId.toLowerCase() &&
+            known.pid === p.productId.toLowerCase()
+        )
+    );
+    if (byVidPid) return byVidPid;
+
+    // Pass 2: Mac path patterns (fallback for dev machine)
+    const byMacPath = ports.find(p =>
+        p.path.includes('usbmodem') || p.path.includes('usbserial')
+    );
+    if (byMacPath) return byMacPath;
+
+    // Pass 3: any COM port with a vendor ID (last resort)
+    return ports.find(p => p.path.startsWith('COM') && p.vendorId) || null;
+}
+
+// ==========================================
 // THE HYPER-POLLING HEARTBEAT
 // ==========================================
 function startHardwareHeartbeat() {
@@ -32,17 +67,17 @@ function startHardwareHeartbeat() {
     setInterval(async () => {
         try {
             const ports = await SerialPort.list();
-            
-            const targetPort = ports.find(p => 
-                p.path.includes('usbmodem') || 
-                p.path.includes('usbserial') || 
-                (p.path.startsWith('COM') && p.vendorId) 
-            );
+            const targetPort = findArduinoPort(ports);
+
+            if (!targetPort && ports.length > 0) {
+                console.log('[SERIAL SCAN] No Arduino found. Available ports:',
+                    ports.map(p => `${p.path} (VID:${p.vendorId||'—'})`).join(', '));
+            }
 
             if (targetPort) {
                 if (!isHardwareConnected && !isConnecting) {
-                    isConnecting = true; 
-                    console.log(`[SERIAL INIT] Arduino detected. Stabilizing: ${targetPort.path}...`);
+                    isConnecting = true;
+                    console.log(`[SERIAL INIT] Arduino detected. Stabilizing: ${targetPort.path} (VID:${targetPort.vendorId||'—'})...`);
                     
                     if (arduinoPort) {
                         if (arduinoPort.isOpen) arduinoPort.close();
@@ -93,6 +128,8 @@ function startHardwareHeartbeat() {
                                         if (line.includes('HOMING_COMPLETE') || line.includes('BLIND_VEND_COMPLETE')) {
                                             arduinoConfirmedDrops++;
                                             broadcastQAStats();
+                                            // Notify renderer so stress test can sequence next vend
+                                            if (mainWindow) mainWindow.webContents.send('vend-complete');
                                         }
                                     });
                                 }
