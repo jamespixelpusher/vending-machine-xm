@@ -1,0 +1,67 @@
+﻿{"frames": {
+
+"Oh_Henry_Bar_Pip":
+{
+	"frame": {"x":3002,"y":0,"w":849,"h":900},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":849,"h":900},
+	"sourceSize": {"w":849,"h":900}
+},
+"_0_68000_79282_0_Oh_Henry_58g":
+{
+	"frame": {"x":0,"y":0,"w":3000,"h":3000},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":3000,"h":3000},
+	"sourceSize": {"w":3000,"h":3000}
+},
+"countdown_1":
+{
+	"frame": {"x":3002,"y":902,"w":600,"h":600},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":600,"h":600},
+	"sourceSize": {"w":600,"h":600}
+},
+"countdown_2":
+{
+	"frame": {"x":3002,"y":1504,"w":600,"h":600},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":600,"h":600},
+	"sourceSize": {"w":600,"h":600}
+},
+"countdown_3":
+{
+	"frame": {"x":3002,"y":2106,"w":600,"h":600},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":600,"h":600},
+	"sourceSize": {"w":600,"h":600}
+},
+"ohhenry":
+{
+	"frame": {"x":3002,"y":2708,"w":1027,"h":308},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":1027,"h":308},
+	"sourceSize": {"w":1027,"h":308}
+},
+"ohhungry":
+{
+	"frame": {"x":0,"y":3002,"w":940,"h":261},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":940,"h":261},
+	"sourceSize": {"w":940,"h":261}
+}},
+"meta": {
+	"app": "Adobe Animate",
+	"version": "24.0.13.5",
+	"image": "index_atlas_2.png",
+	"format": "undefined",
+	"size": {"w":4096,"h":4096},
+	"scale": "1"
+}
+}

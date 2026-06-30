@@ -83,6 +83,7 @@ let baTestInterval = null;
 let isDevMode = false;
 let gameDurationTimeout = null;
 let gameVolumePollInterval = null;
+let gameWinDelayTimeout = null;
 
 // QA TEST MODE VARIABLES
 let qaInterval = null;   // holds the active setTimeout handle
@@ -208,12 +209,49 @@ window.handleMicInit = async () => {
     if (success) {
         document.getElementById("btn-init-mic").style.display = "none";
         document.getElementById("tuning-controls").style.display = "block";
-        baTestInterval = setInterval(() => {
-            if (window.getGrumbleVolume) {
-                document.getElementById("ba-test-meter-fill").style.width = window.getGrumbleVolume() + "%";
-            }
-        }, 50);
+        // Calibrate the baseline the same way the game does — but only when auto-
+        // calibration is on. Set audioTuning.autoCalibrate = false for standardized
+        // testing so the noise floor stays fixed and the same tone always reads the same.
+        if (window.audioTuning && window.audioTuning.autoCalibrate && window.calibrateNoiseFloor) {
+            window.calibrateNoiseFloor();
+        }
+        startMicTestMeter();
     }
+};
+
+// Live peak-hold meter on the mic settings screen. Re-started whenever that screen is shown.
+function startMicTestMeter() {
+    clearInterval(baTestInterval);
+    let peakHold = 0;
+    baTestInterval = setInterval(() => {
+        if (window.getGrumbleVolume) {
+            const v = window.getGrumbleVolume();
+            // Peak-hold so a momentary peak (which would win the game) stays
+            // visible against the win line instead of flicking past it.
+            peakHold = Math.max(v, peakHold - 2);
+            document.getElementById("ba-test-meter-fill").style.width = peakHold + "%";
+        }
+    }, 50);
+}
+
+// Return to the mic settings screen from anywhere (the 'm' key). Stops the running game
+// and re-shows the setup panel with the live tuning meter going.
+window.showMicSettings = () => {
+    clearInterval(gameVolumePollInterval);
+    clearTimeout(gameDurationTimeout);
+    clearTimeout(gameWinDelayTimeout);
+    if (window.stopVUMeter) window.stopVUMeter();
+    if (window.hideSpectrumBg) window.hideSpectrumBg();
+    if (window.setSimulatedScore) window.setSimulatedScore(null);
+
+    const anim = document.getElementById("animation_container");
+    if (anim) { anim.style.opacity = "0"; anim.style.display = "none"; }
+    const idleBtn = document.getElementById("idle-tap-btn");
+    if (idleBtn) idleBtn.style.display = "none";
+
+    document.getElementById("ba-setup-screen").style.display = "flex";
+    currentClipName = null;   // so the next launch starts cleanly at idle
+    startMicTestMeter();
 };
 
 window.runCalibration = () => {
@@ -221,30 +259,20 @@ window.runCalibration = () => {
     const display = document.getElementById("val-floor");
     btn.disabled = true;
     btn.innerText = "Listening...";
-    
-    let samples = [];
-    let calInterval = setInterval(() => {
-        if (window.getRawVolume) samples.push(window.getRawVolume());
-    }, 50);
 
-    setTimeout(() => {
-        clearInterval(calInterval);
-        let sum = samples.reduce((a, b) => a + b, 0);
-        let floor = Math.min(80, Math.round((sum / samples.length) + 3));
-        
-        if (window.audioTuning) window.audioTuning.noiseFloor = floor;
-        display.innerText = "Baseline Floor: " + floor + "%";
-        
+    // Use the exact routine the game runs each round, so manual and automatic
+    // calibration always produce the same baseline floor.
+    window.calibrateNoiseFloor(3000).then((floor) => {
+        if (display) display.innerText = "Baseline Floor: " + floor + "%";
         btn.innerText = "Recalibrate";
         btn.disabled = false;
-    }, 3000);
+    });
 };
 
 window.updateTuning = () => {
     const target = parseInt(document.getElementById("slide-target").value);
     const boost = parseFloat(document.getElementById("slide-boost").value);
-    const deepOnly = document.getElementById("check-deep").checked;
-    
+
     document.getElementById("val-target").innerText = target + "%";
     document.getElementById("val-boost").innerText = boost.toFixed(1) + "x";
     document.getElementById("win-line-indicator").style.left = target + "%";
@@ -253,7 +281,6 @@ window.updateTuning = () => {
     if (window.audioTuning) {
         window.audioTuning.targetVolume = target;
         window.audioTuning.micBoost = boost;
-        window.audioTuning.deepGrowlOnly = deepOnly;
     }
 };
 
@@ -287,11 +314,18 @@ function hideAllClips() {
 
 window.handleIdleTap = () => {
     document.getElementById('idle-tap-btn').style.display = 'none';
+    // Re-measure the room's ambient noise at the start of each round (during the
+    // countdown, before the participant growls) so difficulty stays consistent.
+    if (window.audioTuning && window.audioTuning.autoCalibrate && window.calibrateNoiseFloor) {
+        window.calibrateNoiseFloor();
+    }
     transitionTo("clip_countdown");
 };
 
 function transitionTo(newClipName) {
     document.getElementById('idle-tap-btn').style.display = 'none';
+    // Fade the spectrum out the moment the game screen starts animating out
+    if (currentClipName === "clip_game" && window.hideSpectrumBg) window.hideSpectrumBg();
     targetClipName = newClipName;
     if (currentClipName && window.mcRoot.clip_content[currentClipName]) {
         window.mcRoot.clip_content[currentClipName].gotoAndPlay("anim_out");
@@ -310,6 +344,9 @@ function bringInNextClip() {
     if (currentClipName === "clip_countdown" && activeClip.countdown_anim) {
         activeClip.countdown_anim.gotoAndStop(0); 
     }
+
+    // Reset the meter to its starting position before the game's intro animates in
+    if (currentClipName === "clip_game" && window.resetVUMeter) window.resetVUMeter();
 
     activeClip.visible = true;
     activeClip.gotoAndPlay("anim_in");
@@ -330,6 +367,10 @@ window.onIntroComplete = () => {
     const activeClip = window.mcRoot.clip_content[currentClipName];
     activeClip.gotoAndStop("active");
 
+    // gotoAndStop() recreates Animate frame objects with their baked-in defaults.
+    // Re-apply copy immediately so FR text isn't wiped back to EN.
+    if (window.applyCopy) window.applyCopy();
+
     switch(currentClipName) {
         case "clip_countdown":
             if (window.hideSpectrumBg) window.hideSpectrumBg();
@@ -343,10 +384,17 @@ window.onIntroComplete = () => {
             gameVolumePollInterval = setInterval(() => {
                 let currentVol = window.getGrumbleVolume ? window.getGrumbleVolume() : 0;
                 let target = window.audioTuning ? window.audioTuning.targetVolume : 80;
-                if (currentVol >= target) triggerWin();
+                if (currentVol >= target) {
+                    // Win detected: stop polling, sweep the needle to the top, and wait ~500ms
+                    // so the meter reaches the winning position before we freeze it. (A sudden
+                    // loud spike otherwise freezes the needle partway up.)
+                    clearInterval(gameVolumePollInterval);
+                    if (window.lockVUMeter) window.lockVUMeter(100);
+                    gameWinDelayTimeout = setTimeout(triggerWin, 500);
+                }
             }, 100);
 
-            gameDurationTimeout = setTimeout(() => { triggerWin(); }, 5000);
+            if (isDevMode) gameDurationTimeout = setTimeout(() => { triggerWin(); }, 5000);
             break;
 
         case "clip_success":
@@ -362,16 +410,27 @@ window.onCountdownComplete = () => {
     // onOutroComplete fires → bringInNextClip("clip_game").
     targetClipName = "clip_game";
     const countdown = window.mcRoot.clip_content.clip_countdown;
-    if (countdown) countdown.gotoAndPlay(320);
+    if (countdown) {
+        countdown.gotoAndPlay(320);
+        // Re-apply copy — the outro frames may recreate text objects with EN defaults
+        if (window.applyCopy) window.applyCopy();
+    }
 };
 
 function triggerWin() {
     clearInterval(gameVolumePollInterval);
     clearTimeout(gameDurationTimeout);
-    
-    if (window.stopVUMeter) window.stopVUMeter();
+    clearTimeout(gameWinDelayTimeout);
+
+    // Freeze the meter where it is (its winning position) — do NOT snap it back to 0.
+    if (window.stopVUMeter) window.stopVUMeter(false);
     window.vendNextAvailableItem();
-    transitionTo("clip_success");
+
+    // Hold on the game screen for 2 seconds with the needle frozen in the winning
+    // position, then transition to the win screen.
+    setTimeout(() => {
+        transitionTo("clip_success");
+    }, 2000);
 }
 
 window.runDiagnostic = () => {
@@ -527,6 +586,7 @@ function setupKeyboardOverrides() {
         }
         
         // 4. GAMEPLAY OVERRIDES
+        if (key === 'm') { window.showMicSettings(); }
         if (key === 'w' && currentClipName === "clip_game") { window.triggerOrganicWin(); }
         if (key === 'd') { window.vendNextAvailableItem(); }
         if (key === '`' || key === '~') { window.runDiagnostic(); }

@@ -33,7 +33,8 @@ function broadcastQAStats() {
 const ARDUINO_UNO_PORTS = [
     { vid: '2341', pid: '0043' }, // Official Uno R3 (ATmega16U2)
     { vid: '2341', pid: '0001' }, // Official Uno R1/R2
-    { vid: '2341', pid: '0243' }, // Official Uno R3 (DFU bootloader mode)
+    { vid: '2341', 
+        pid: '0243' }, // Official Uno R3 (DFU bootloader mode)
     { vid: '1a86', pid: '7523' }, // CH340G clone (most common cheap Uno)
     { vid: '0403', pid: '6001' }, // FTDI FT232RL clone
 ];
